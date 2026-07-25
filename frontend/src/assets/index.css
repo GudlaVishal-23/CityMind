@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased font-body selection:bg-primary/20;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────── */
+/*  GHMC Glassmorphic Cards – Light variant (Login, Public pages)  */
+/* ──────────────────────────────────────────────────────────────── */
+.glass-card {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  border: 1px solid rgba(2, 132, 199, 0.15);
+  box-shadow:
+    0 20px 60px rgba(2, 132, 199, 0.07),
+    0 4px 16px rgba(15, 23, 42, 0.05);
+}
+
+/* ─────────────────────────────────────────────────────── */
+/*  Dashboard Glass – Deep Civic Navy (Internal Dashboards) */
+/* ─────────────────────────────────────────────────────── */
+.glass-dashboard {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* ───────────────────── */
+/*  Glow Indicator Dots  */
+/* ───────────────────── */
+.glow-dot-blue   { box-shadow: 0 0 8px #0284c7, 0 0 20px #0284c7; }
+.glow-dot-yellow { box-shadow: 0 0 8px #f59e0b, 0 0 20px #f59e0b; }
+.glow-dot-green  { box-shadow: 0 0 8px #10b981, 0 0 20px #10b981; }
+.glow-dot-red    { box-shadow: 0 0 8px #ef4444, 0 0 20px #ef4444; }
+
+/* ────────────── */
+/*  Map Geopin    */
+/* ────────────── */
+@keyframes geopin-pulse {
+  0%   { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(2, 132, 199, 0.7); }
+  70%  { transform: scale(1);    box-shadow: 0 0 0 12px rgba(2, 132, 199, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(2, 132, 199, 0); }
+}
+.ping-animation { animation: geopin-pulse 2s infinite; }
+
+/* ────────────────────── */
+/*  Custom Scrollbar       */
+/* ────────────────────── */
+.custom-scrollbar::-webkit-scrollbar       { height: 5px; width: 5px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: rgba(203,213,225,0.15); border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(2,132,199,0.35); border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(2,132,199,0.6); }
+
+/* ─────────────────── */
+/*  Login-specific      */
+/* ─────────────────── */
+@keyframes gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animated-gradient {
+  background-size: 200% 200%;
+  animation: gradient-shift 8s ease infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%      { transform: translateY(-12px); }
+}
+.float-animation { animation: float 6s ease-in-out infinite; }
