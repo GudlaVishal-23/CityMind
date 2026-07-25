@@ -21,6 +21,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Markdown Spec Docs
+*.md
+
 # System & IDE
 .DS_Store
 Thumbs.db
