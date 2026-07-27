@@ -140,28 +140,28 @@ export const IngestionPage: React.FC = () => {
 
   const handleLoadElectricDemoAsset = () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-    const wideUrl = origin + DEMO_WIDE_ANGLE;
-    const detailUrl = origin + DEMO_DETAIL_ANGLE;
-    const landmarkUrl = origin + DEMO_LANDMARK_ANGLE;
+    const wideUrl = origin + '/demo/electric_wide.png';
+    const detailUrl = origin + '/demo/electric_close.png';
+    const landmarkUrl = origin + '/demo/electric_landmark.png';
 
-    setTitle('Exposed High-Voltage Cable Sparks near Gachibowli Flyover');
-    setDescription('Dangling 11kV electrical wire hanging low over pedestrian walkway with active sparking near Gachibowli junction. Immediate life hazard to commuters, cyclists, and street vendors.');
+    setTitle('Exposed High-Voltage Cable Sparks near MG Road Junction');
+    setDescription('Dangling 11kV electrical cable maze hanging low over pedestrian walkway with active wire exposure at MG Road junction. Immediate life hazard to commuters, cyclists, and street vendors.');
     setImageUrl(wideUrl);
-    setLocation({ lat: 17.4401, lng: 78.3489, locationName: 'Gachibowli Junction, Hyderabad', isExactGps: true });
+    setLocation({ lat: 17.4401, lng: 78.3489, locationName: 'MG Road Junction, Hyderabad', isExactGps: true });
     setCapturedSnaps({ angle1: wideUrl, angle2: detailUrl, angle3: landmarkUrl });
     setError(null);
   };
 
   const handleLoadGarbageDemoAsset = () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-    const wideUrl = origin + DEMO_WIDE_ANGLE;
-    const detailUrl = origin + DEMO_DETAIL_ANGLE;
-    const landmarkUrl = origin + DEMO_LANDMARK_ANGLE;
+    const wideUrl = origin + '/demo/garbage_wide.png';
+    const detailUrl = origin + '/demo/garbage_close.png';
+    const landmarkUrl = origin + '/demo/garbage_landmark.png';
 
-    setTitle('Massive Waste Dump & Overflowing Garbage Bins in Kukatpally');
-    setDescription('Uncollected municipal solid waste accumulated over 4 days blocking half of the road near Kukatpally Housing Board Phase 3. Severe foul odor, vector breeding risk, and public health hazard.');
+    setTitle('Massive GHMC Waste Bin Overflow near Charminar Old City');
+    setDescription('Uncollected municipal solid waste overflowing from GHMC bins near Charminar heritage zone. Severe foul odor, vector breeding risk, and public health hazard blocking main traffic lane.');
     setImageUrl(wideUrl);
-    setLocation({ lat: 17.4849, lng: 78.4011, locationName: 'Kukatpally KPHB Phase 3, Hyderabad', isExactGps: true });
+    setLocation({ lat: 17.3616, lng: 78.4747, locationName: 'Charminar Ward, Old City, Hyderabad', isExactGps: true });
     setCapturedSnaps({ angle1: wideUrl, angle2: detailUrl, angle3: landmarkUrl });
     setError(null);
   };
