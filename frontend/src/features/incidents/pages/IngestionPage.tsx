@@ -124,6 +124,48 @@ export const IngestionPage: React.FC = () => {
     setError(null);
   };
 
+  const handleLoadWaterDemoAsset = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    const wideUrl = origin + DEMO_WIDE_ANGLE;
+    const detailUrl = origin + DEMO_DETAIL_ANGLE;
+    const landmarkUrl = origin + DEMO_LANDMARK_ANGLE;
+
+    setTitle('Major Pipeline Burst & Water Overflow on Jubilee Hills Road No. 36');
+    setDescription('High-pressure underground water supply pipe burst causing massive flooding across 200 meters of main road near Metro Pillar 140. Clean drinking water is wasting rapidly and flooding nearby commercial storefronts.');
+    setImageUrl(wideUrl);
+    setLocation({ lat: 17.4325, lng: 78.4071, locationName: 'Jubilee Hills Road No. 36, Hyderabad', isExactGps: true });
+    setCapturedSnaps({ angle1: wideUrl, angle2: detailUrl, angle3: landmarkUrl });
+    setError(null);
+  };
+
+  const handleLoadElectricDemoAsset = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    const wideUrl = origin + DEMO_WIDE_ANGLE;
+    const detailUrl = origin + DEMO_DETAIL_ANGLE;
+    const landmarkUrl = origin + DEMO_LANDMARK_ANGLE;
+
+    setTitle('Exposed High-Voltage Cable Sparks near Gachibowli Flyover');
+    setDescription('Dangling 11kV electrical wire hanging low over pedestrian walkway with active sparking near Gachibowli junction. Immediate life hazard to commuters, cyclists, and street vendors.');
+    setImageUrl(wideUrl);
+    setLocation({ lat: 17.4401, lng: 78.3489, locationName: 'Gachibowli Junction, Hyderabad', isExactGps: true });
+    setCapturedSnaps({ angle1: wideUrl, angle2: detailUrl, angle3: landmarkUrl });
+    setError(null);
+  };
+
+  const handleLoadGarbageDemoAsset = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    const wideUrl = origin + DEMO_WIDE_ANGLE;
+    const detailUrl = origin + DEMO_DETAIL_ANGLE;
+    const landmarkUrl = origin + DEMO_LANDMARK_ANGLE;
+
+    setTitle('Massive Waste Dump & Overflowing Garbage Bins in Kukatpally');
+    setDescription('Uncollected municipal solid waste accumulated over 4 days blocking half of the road near Kukatpally Housing Board Phase 3. Severe foul odor, vector breeding risk, and public health hazard.');
+    setImageUrl(wideUrl);
+    setLocation({ lat: 17.4849, lng: 78.4011, locationName: 'Kukatpally KPHB Phase 3, Hyderabad', isExactGps: true });
+    setCapturedSnaps({ angle1: wideUrl, angle2: detailUrl, angle3: landmarkUrl });
+    setError(null);
+  };
+
   const handleLoadFlaggedDemoAsset = () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
     const flaggedUrl = origin + '/demo/flagged_indoor.png';
@@ -239,22 +281,46 @@ export const IngestionPage: React.FC = () => {
                   <FileText className="w-4 h-4 text-sky-600" />
                   Report Civic Hazard
                 </h2>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <button
                     type="button"
                     onClick={handleLoadDemoAsset}
-                    className="text-[10px] px-2.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-xl hover:bg-emerald-100 transition-all font-bold flex items-center gap-1 shadow-2xs"
-                    title="Load valid pothole hazard report that passes AI verification"
+                    className="text-[10px] px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-xl hover:bg-emerald-100 transition-all font-bold flex items-center gap-1 shadow-2xs"
+                    title="Load Pothole Hazard demo"
                   >
-                    <span>🟢 Valid Demo</span>
+                    <span>🟢 Pothole</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLoadWaterDemoAsset}
+                    className="text-[10px] px-2 py-1 bg-sky-50 text-sky-700 border border-sky-200/80 rounded-xl hover:bg-sky-100 transition-all font-bold flex items-center gap-1 shadow-2xs"
+                    title="Load Water Pipeline Burst demo"
+                  >
+                    <span>💧 Water Burst</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLoadElectricDemoAsset}
+                    className="text-[10px] px-2 py-1 bg-amber-50 text-amber-800 border border-amber-200/80 rounded-xl hover:bg-amber-100 transition-all font-bold flex items-center gap-1 shadow-2xs"
+                    title="Load Electrical Wire Hazard demo"
+                  >
+                    <span>⚡ Electric Wire</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLoadGarbageDemoAsset}
+                    className="text-[10px] px-2 py-1 bg-teal-50 text-teal-800 border border-teal-200/80 rounded-xl hover:bg-teal-100 transition-all font-bold flex items-center gap-1 shadow-2xs"
+                    title="Load Sanitation Garbage Dump demo"
+                  >
+                    <span>🗑️ Garbage</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleLoadFlaggedDemoAsset}
-                    className="text-[10px] px-2.5 py-1.5 bg-rose-50 text-rose-700 border border-rose-200/80 rounded-xl hover:bg-rose-100 transition-all font-bold flex items-center gap-1 shadow-2xs"
+                    className="text-[10px] px-2 py-1 bg-rose-50 text-rose-700 border border-rose-200/80 rounded-xl hover:bg-rose-100 transition-all font-bold flex items-center gap-1 shadow-2xs"
                     title="Load fake/indoor non-civic report that triggers AI flagging & dismissal"
                   >
-                    <span>🚨 Flagged Demo</span>
+                    <span>🚨 Flagged</span>
                   </button>
                 </div>
               </div>
