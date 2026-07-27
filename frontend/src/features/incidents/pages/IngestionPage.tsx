@@ -126,9 +126,9 @@ export const IngestionPage: React.FC = () => {
 
   const handleLoadWaterDemoAsset = () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-    const wideUrl = origin + DEMO_WIDE_ANGLE;
-    const detailUrl = origin + DEMO_DETAIL_ANGLE;
-    const landmarkUrl = origin + DEMO_LANDMARK_ANGLE;
+    const wideUrl = origin + '/demo/water_wide.png';
+    const detailUrl = origin + '/demo/water_close.png';
+    const landmarkUrl = origin + '/demo/water_landmark.png';
 
     setTitle('Major Pipeline Burst & Water Overflow on Jubilee Hills Road No. 36');
     setDescription('High-pressure underground water supply pipe burst causing massive flooding across 200 meters of main road near Metro Pillar 140. Clean drinking water is wasting rapidly and flooding nearby commercial storefronts.');
