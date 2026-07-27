@@ -21,15 +21,14 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
 
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@components/*": ["src/components/*"],
-      "@config/*": ["src/config/*"],
-      "@features/*": ["src/features/*"],
-      "@store/*": ["src/store/*"],
-      "@types/*": ["src/types/*"],
-      "@routes/*": ["src/routes/*"]
+      "@/*": ["./src/*"],
+      "@components/*": ["./src/components/*"],
+      "@config/*": ["./src/config/*"],
+      "@features/*": ["./src/features/*"],
+      "@store/*": ["./src/store/*"],
+      "@types/*": ["./src/types/*"],
+      "@routes/*": ["./src/routes/*"]
     }
   },
   "include": ["src"],

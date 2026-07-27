@@ -16,15 +16,13 @@
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "moduleResolution": "node",
-    "baseUrl": "./",
     "paths": {
-      "@config/*": ["src/config/*"],
-      "@models/*": ["src/models/*"],
-      "@middleware/*": ["src/middleware/*"],
-      "@services/*": ["src/services/*"],
-      "@controllers/*": ["src/controllers/*"],
-      "@utils/*": ["src/utils/*"]
+      "@config/*": ["./src/config/*"],
+      "@models/*": ["./src/models/*"],
+      "@middleware/*": ["./src/middleware/*"],
+      "@services/*": ["./src/services/*"],
+      "@controllers/*": ["./src/controllers/*"],
+      "@utils/*": ["./src/utils/*"]
     },
     "esModuleInterop": true,
     "experimentalDecorators": true,
