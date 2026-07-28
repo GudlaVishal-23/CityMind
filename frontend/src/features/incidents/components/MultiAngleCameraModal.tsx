@@ -52,6 +52,7 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
   onClose,
   onComplete
 }) => {
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [capturedSnaps, setCapturedSnaps] = useState<string[]>([]);
   const [qualityError, setQualityError] = useState<string | null>(null);
@@ -66,7 +67,7 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
   // Initialize camera stream when modal opens
   useEffect(() => {
     if (isOpen) {
-      startCamera();
+      startCamera(facingMode);
     } else {
       stopCamera();
       setCapturedSnaps([]);
@@ -79,7 +80,7 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
     };
   }, [isOpen]);
 
-  const startCamera = async () => {
+  const startCamera = async (targetFacingMode: 'user' | 'environment' = facingMode) => {
     setQualityError(null);
     setCameraErrorMsg(null);
     stopCamera();
@@ -88,11 +89,18 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
       let stream: MediaStream | null = null;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: { ideal: 'user' } }
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: { exact: targetFacingMode } }
         });
       } catch (err1) {
-        console.warn('[Camera] Ideal constraint failed, falling back to basic video constraint:', err1);
-        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        console.warn(`[Camera] Exact facingMode (${targetFacingMode}) failed, trying ideal:`, err1);
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: { ideal: targetFacingMode } }
+          });
+        } catch (err2) {
+          console.warn('[Camera] Ideal constraint failed, falling back to basic video constraint:', err2);
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        }
       }
 
       streamRef.current = stream;
@@ -107,6 +115,12 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
       setIsCameraActive(false);
       setCameraErrorMsg(err.message || 'Webcam access unavailable or permission denied.');
     }
+  };
+
+  const toggleFacingMode = () => {
+    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(nextMode);
+    startCamera(nextMode);
   };
 
   const stopCamera = () => {
@@ -304,12 +318,23 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
               <p className="text-[10px] font-mono text-sky-700 font-bold">{currentAngleConfig.subtitle}</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={toggleFacingMode}
+              className="px-2.5 py-1.5 bg-sky-50 border border-sky-200 text-sky-700 hover:bg-sky-100 text-xs font-mono font-bold rounded-xl transition-all flex items-center gap-1.5"
+              title="Switch between Front and Back camera"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-sky-600" />
+              <span>{facingMode === 'environment' ? '📷 Back Cam' : '🤳 Front Cam'}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Step Progress Stepper Bar */}
