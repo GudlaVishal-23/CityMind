@@ -2,6 +2,7 @@
   "name": "aicity-frontend",
   "version": "1.0.0",
   "description": "AI CITY: An Agentic AI Operating System for Autonomous Civic Operations Frontend Client",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

@@ -13,7 +13,7 @@ const app = express();
 // Security and Policy configuration
 app.use(helmet());
 app.use(cors({
-  origin: '*', // Open access during hackathon testing
+  origin: true, // Echoes requesting origin dynamically (works with Vercel, localhost, and custom domains)
   credentials: true
 }));
 

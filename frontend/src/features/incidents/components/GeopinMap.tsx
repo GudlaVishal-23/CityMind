@@ -140,8 +140,8 @@ export const GeopinMap: React.FC<GeopinMapProps> = ({ onLocationSelect }) => {
           style={{ width: '100%', height: '100%', background: '#F1F5F9' }}
         >
           <TileLayer
-            attribution='&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap'
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
           <MapEventsHandler onClick={(lat, lng) => handleMapClick(lat, lng)} />

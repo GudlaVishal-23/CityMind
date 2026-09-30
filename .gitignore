@@ -29,6 +29,7 @@ yarn-error.log*
 Thumbs.db
 .idea/
 .vscode/
+.kilo/
 *.suo
 *.ntvs*
 *.njsproj
