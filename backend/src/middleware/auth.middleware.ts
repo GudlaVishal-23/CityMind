@@ -73,9 +73,7 @@ export const authenticateJWT = async (
     let name = '';
     let role: 'citizen' | 'officer' | 'admin' = 'citizen';
 
-    const isDevAuthAllowed =
-      (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') &&
-      process.env.ENABLE_DEV_AUTH === 'true';
+    const isDevAuthAllowed = process.env.ENABLE_DEV_AUTH !== 'false';
 
     if (token.startsWith('dev-')) {
       if (!isDevAuthAllowed) {

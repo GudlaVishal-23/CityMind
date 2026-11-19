@@ -7,7 +7,14 @@ import { RateLimitCountdownToast, PayloadTooLargeToast } from './RateLimitToast'
 
 export { RateLimitCountdownToast, PayloadTooLargeToast };
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || (typeof window !== 'undefined' && window.location.hostname !== 'localhost' ? '/api' : 'http://localhost:5000/api');
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_BACKEND_URL ||
+  (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')
+    ? 'https://citymindbackend.onrender.com/api'
+    : typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+    ? '/api'
+    : 'http://localhost:5000/api');
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

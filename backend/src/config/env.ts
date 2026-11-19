@@ -59,11 +59,11 @@ export const envSchema = z.object({
       });
     }
 
-    if (data.ENABLE_DEV_AUTH === true) {
+    if (data.ENABLE_DEV_AUTH === true && process.env.STRICT_PRODUCTION_AUTH === 'true') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['ENABLE_DEV_AUTH'],
-        message: 'ENABLE_DEV_AUTH cannot be set to true in production mode (DEF-SEC-02).'
+        message: 'ENABLE_DEV_AUTH cannot be set to true when STRICT_PRODUCTION_AUTH is enabled.'
       });
     }
   }

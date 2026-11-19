@@ -29,7 +29,7 @@ const getAllowedOrigins = (): string[] => {
   }
   return env.corsOrigins.length > 0
     ? env.corsOrigins
-    : ['http://localhost:5173', 'http://localhost:3000'];
+    : ['http://localhost:5173', 'http://localhost:3000', 'https://city-mind-ecru.vercel.app'];
 };
 
 // Security and Policy configuration
@@ -57,7 +57,11 @@ const corsOptions: CorsOptions = {
     const sanitizedOrigin = origin.replace(/\/$/, '');
     const allowed = getAllowedOrigins();
 
-    if (allowed.includes(sanitizedOrigin)) {
+    if (
+      allowed.includes(sanitizedOrigin) ||
+      sanitizedOrigin === 'https://city-mind-ecru.vercel.app' ||
+      /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(sanitizedOrigin)
+    ) {
       return callback(null, true);
     }
 
