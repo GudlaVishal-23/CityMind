@@ -1,16 +1,26 @@
+import React, { Suspense } from 'react';
 import { RouteObject, Navigate } from 'react-router-dom';
 import AuthGuard from './AuthGuard';
-import LoginPage from '../features/auth/pages/LoginPage';
-import IngestionPage from '../features/incidents/pages/IngestionPage';
-import CitizenTrackingPage from '../features/incidents/pages/CitizenTrackingPage';
-import OfficerDashboardPage from '../features/officer/pages/OfficerDashboardPage';
-import OperationsCenterPage from '../features/operations/pages/OperationsCenterPage';
+import TacticalRouteSkeleton from '../components/ui/TacticalRouteSkeleton';
+
+// Lazy-loaded route modules (Google Web.dev Core Web Vitals)
+const LoginPage = React.lazy(() => import('../features/auth/pages/LoginPage'));
+const IngestionPage = React.lazy(() => import('../features/incidents/pages/IngestionPage'));
+const CitizenTrackingPage = React.lazy(() => import('../features/incidents/pages/CitizenTrackingPage'));
+const OfficerDashboardPage = React.lazy(() => import('../features/officer/pages/OfficerDashboardPage'));
+const OperationsCenterPage = React.lazy(() => import('../features/operations/pages/OperationsCenterPage'));
+
+const LazyView: React.FC<{ component: React.ComponentType }> = ({ component: Component }) => (
+  <Suspense fallback={<TacticalRouteSkeleton />}>
+    <Component />
+  </Suspense>
+);
 
 export const routes: RouteObject[] = [
   // Public Paths
   {
     path: '/login',
-    element: <LoginPage />
+    element: <LazyView component={LoginPage} />
   },
   // Citizen Private Paths
   {
@@ -19,11 +29,11 @@ export const routes: RouteObject[] = [
     children: [
       {
         path: 'report',
-        element: <IngestionPage />
+        element: <LazyView component={IngestionPage} />
       },
       {
         path: 'tracking',
-        element: <CitizenTrackingPage />
+        element: <LazyView component={CitizenTrackingPage} />
       },
       {
         path: '',
@@ -38,7 +48,7 @@ export const routes: RouteObject[] = [
     children: [
       {
         path: '',
-        element: <OfficerDashboardPage />
+        element: <LazyView component={OfficerDashboardPage} />
       }
     ]
   },
@@ -49,7 +59,7 @@ export const routes: RouteObject[] = [
     children: [
       {
         path: '',
-        element: <OperationsCenterPage />
+        element: <LazyView component={OperationsCenterPage} />
       }
     ]
   },

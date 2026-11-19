@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useUIStore from '@store/uiStore';
 import { api } from '@config/api';
+import { toast } from 'sonner';
 import NotificationBell from '../../notifications/NotificationBell';
 import { 
   Check, X, HelpCircle, RefreshCw, 
@@ -27,22 +28,42 @@ export const OfficerDashboardPage: React.FC = () => {
   const [officerSeverity, setOfficerSeverity] = useState('Medium');
   const [officerDept, setOfficerDept] = useState('WATER_BOARD');
 
-  const fetchIncidents = async () => {
+  // Live Sync & Telemetry state (Task 4)
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<Date>(new Date());
+
+  const fetchIncidents = async (isBackground: boolean = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) {
+        setLoading(true);
+      } else {
+        setIsSyncing(true);
+      }
       const res = await api.get('/incidents');
       if (res.data.success) {
         setIncidents(res.data.data.incidents || []);
       }
+      setLastSynced(new Date());
     } catch (err) {
       console.error('[OfficerDashboardPage] Failed to fetch incidents:', err);
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      } else {
+        setIsSyncing(false);
+      }
     }
   };
 
+  // Visibility-aware background polling every 30s
   useEffect(() => {
     fetchIncidents();
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchIncidents(true);
+      }
+    }, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleExecuteAction = async (e: React.FormEvent) => {
@@ -53,7 +74,7 @@ export const OfficerDashboardPage: React.FC = () => {
 
     try {
       let endpoint = '';
-      let body: any = {};
+      let body: Record<string, unknown> = {};
 
       switch (actionType) {
         case 'accept':
@@ -88,8 +109,13 @@ export const OfficerDashboardPage: React.FC = () => {
           break;
       }
 
-      const res = await api.post(endpoint, body);
+      // DEF-UI-01: Status update requires PATCH verb per Google API Design & REST specification
+      const res = actionType === 'status'
+        ? await api.patch(endpoint, body)
+        : await api.post(endpoint, body);
+
       if (res.data.success) {
+        toast.success(actionType === 'status' ? 'Ticket status updated successfully' : 'Action executed successfully');
         setActionType(null);
         setReasonInput('');
         fetchIncidents();
@@ -97,8 +123,11 @@ export const OfficerDashboardPage: React.FC = () => {
           setSelectedIncident(res.data.data);
         }
       }
-    } catch (err: any) {
-      setError(err.response?.data?.error?.message || err.message || 'Action failed.');
+    } catch (err: unknown) {
+      const errorObj = err as { response?: { data?: { error?: { message?: string } } }; message?: string };
+      const errorMessage = errorObj.response?.data?.error?.message || errorObj.message || 'Action failed.';
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -133,6 +162,27 @@ export const OfficerDashboardPage: React.FC = () => {
               <span className="truncate max-w-[120px]">{authUser?.name || 'Inspector Ramesh Kumar'}</span>
               <span className="text-[9px] text-sky-700 bg-sky-100 px-2 py-0.5 rounded-md uppercase font-extrabold">Active</span>
             </div>
+            {/* Live Telemetry & Visibility-Aware Sync Indicator (Task 4) */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 border border-slate-200/80 rounded-xl text-xs">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="text-[11px] font-mono tabular-nums text-slate-600 hidden md:inline">
+                Last synced: {lastSynced.toLocaleTimeString()}
+              </span>
+              <button
+                type="button"
+                onClick={() => fetchIncidents(true)}
+                disabled={isSyncing}
+                className="p-1 hover:text-sky-600 rounded-lg transition-colors flex items-center gap-1 text-slate-600"
+                title="Sync Live Incidents"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-sky-600' : ''}`} />
+                <span className="text-[10px] font-bold font-mono uppercase hidden lg:inline">Sync Now</span>
+              </button>
+            </div>
+
             <NotificationBell />
             <div className="h-4 w-[1px] bg-slate-200" />
             <button

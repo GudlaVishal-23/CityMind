@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import swaggerUi from 'swagger-ui-express';
+import { openApiSpec } from '../docs/openapi';
 import incidentRoutes from './incident.routes';
 import adminRoutes from './admin.routes';
 import graphRoutes from './graph.routes';
@@ -9,7 +11,16 @@ import { authenticateJWT } from '../middleware/auth.middleware';
 
 const router = Router();
 
+// OpenAPI 3.0.3 Interactive Documentation
+router.get('/docs.json', (_req, res) => {
+  res.status(200).json(openApiSpec);
+});
+router.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec));
+
 // User Sync API
+router.get('/auth/sync', authenticateJWT, (req, res) => {
+  res.status(200).json({ success: true, data: req.user });
+});
 router.post('/auth/sync', authenticateJWT, (req, res) => {
   res.status(200).json({ success: true, data: req.user });
 });

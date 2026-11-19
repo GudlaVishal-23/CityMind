@@ -21,8 +21,13 @@ export class NotificationService {
     return notifications || [];
   }
 
-  public static async markRead(notificationId: string): Promise<void> {
-    await Notification.findByIdAndUpdate(notificationId, { read: true });
+  public static async markRead(notificationId: string, userId: string): Promise<boolean> {
+    const notification = await Notification.findOneAndUpdate(
+      { _id: notificationId, userId },
+      { $set: { read: true, readAt: new Date() } },
+      { new: true }
+    );
+    return !!notification;
   }
 
   public static async markAllRead(userId: string): Promise<void> {

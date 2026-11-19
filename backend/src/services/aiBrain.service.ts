@@ -8,6 +8,8 @@
 // =============================================================================
 
 import { executeLangGraphPipeline } from './langGraphBrain.service';
+import { DuplicateAnalysisResult } from './duplicate.service';
+import { detectDepartment } from '../utils/pureHelpers';
 import logger from '../utils/logger';
 
 export interface AIBrainResult {
@@ -18,6 +20,9 @@ export interface AIBrainResult {
   why: string[];
   estimatedResolution: string;
   imageFeatures: string[];
+  embedding?: number[];
+  imageDHash?: string;
+  duplicateAnalysis?: DuplicateAnalysisResult | null;
   exifVerification?: {
     hasExifGps: boolean;
     distanceMeters?: number;
@@ -85,6 +90,9 @@ export class AIBrainService {
           why: finalState.explainability?.why || ['Routed to relevant municipal agency.'],
           estimatedResolution: finalState.estimatedResolution || '24 Hours',
           imageFeatures: finalState.imageAnalysis?.features || [],
+          embedding: finalState.embedding,
+          imageDHash: finalState.imageDHash,
+          duplicateAnalysis: finalState.duplicateAnalysis,
           validationStatus: finalState.validationStatus || 'VALID',
           rejectionReason: finalState.rejectionReason || '',
           latencyMs: Date.now() - overallStart,
@@ -140,8 +148,11 @@ export class AIBrainService {
       rejMsg = '';
     }
 
-    const category = textLower.includes('water') ? 'Water Leakage' : textLower.includes('garbage') || textLower.includes('trash') ? 'Waste Overflow' : textLower.includes('wire') || textLower.includes('transformer') || textLower.includes('electric') ? 'Electrical Hazard' : 'Road Hazard / Pothole';
-    const department = textLower.includes('water') ? 'WATER_BOARD' : textLower.includes('garbage') || textLower.includes('trash') ? 'SANITATION' : textLower.includes('wire') || textLower.includes('transformer') || textLower.includes('electric') ? 'ELECTRICITY' : 'PWD';
+    const department = detectDepartment(textLower);
+    let category = 'Road Hazard / Pothole';
+    if (department === 'WATER_BOARD') category = 'Water Leakage';
+    else if (department === 'SANITATION') category = 'Waste Overflow';
+    else if (department === 'ELECTRICITY') category = 'Electrical Hazard';
 
     return {
       category,

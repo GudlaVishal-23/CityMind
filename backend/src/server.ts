@@ -1,3 +1,4 @@
+import env from './config/env';
 import app from './app';
 import { connectDatabase } from './config/db';
 import { initializeFirebase } from './config/firebase';
@@ -5,7 +6,7 @@ import { configureCloudinary } from './config/cloudinary';
 import { connectNeo4j } from './config/neo4j';
 import logger from './utils/logger';
 
-const PORT = process.env.PORT || 5000;
+const PORT = env.PORT || 5000;
 
 const startServer = async (): Promise<void> => {
   try {
@@ -23,9 +24,9 @@ const startServer = async (): Promise<void> => {
     // 4. Connect Neo4j Graph Database
     await connectNeo4j();
 
-    // 4. Bind listener
+    // 5. Bind listener
     app.listen(PORT, () => {
-      logger.info(`[Startup] Server listening successfully on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode.`);
+      logger.info(`[Startup] Server listening successfully on port ${PORT} in ${env.NODE_ENV} mode.`);
     });
   } catch (error) {
     logger.error(`[Startup] Failed to start server: ${error}`);
@@ -33,4 +34,4 @@ const startServer = async (): Promise<void> => {
   }
 };
 
-startServer();
+void startServer();

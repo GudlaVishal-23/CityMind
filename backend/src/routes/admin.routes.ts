@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import AdminController from '../controllers/admin.controller';
-import Incident from '../models/incident.model';
+import { Incident, INCIDENT_STATUSES } from '../models/incident.model';
 import { authenticateJWT, requireRole } from '../middleware/auth.middleware';
 import { validateBody } from '../middleware/validate.middleware';
 
@@ -36,10 +36,14 @@ router.patch(
   async (req, res, next) => {
     try {
       const { id } = req.params;
-      const { status } = req.body;
+      const { status, note } = req.body;
 
-      if (!['Submitted', 'AI_Assigned', 'In_Progress', 'Resolved'].includes(status)) {
-        res.status(400).json({ success: false, error: { message: 'Invalid status value.' } });
+      // DEF-BE-01: Canonical status validation from INCIDENT_STATUSES
+      if (!INCIDENT_STATUSES.includes(status)) {
+        res.status(400).json({
+          success: false,
+          error: { message: `Invalid status value. Allowed statuses: ${INCIDENT_STATUSES.join(', ')}` }
+        });
         return;
       }
 
@@ -52,7 +56,23 @@ router.patch(
         return;
       }
 
+      const previousStatus = incident.status;
       incident.status = status;
+
+      // DEF-BE-02: Enforce immutable statusHistory audit record
+      const auditNote = note || `[ADMIN STATUS UPDATE] Status changed from ${previousStatus} to ${status}`;
+      if (!incident.statusHistory) {
+        incident.statusHistory = [];
+      }
+      incident.statusHistory.push({
+        status,
+        timestamp: new Date(),
+        note: auditNote,
+        actorId: req.user?.uid || req.user?.id || 'admin',
+        changedBy: req.user?.uid || req.user?.id || 'admin',
+        role: req.user?.role || 'admin'
+      });
+
       await incident.save();
 
       res.status(200).json({

@@ -1,0 +1,87 @@
+# AI CITY AntiGravity Engine Governing Directives
+# Applicable to all autonomous agent sessions
+
+[CONTEXT_EFFICIENCY]
+- Query dependency graph for callers, callees, and types before modifying any file.
+- Confine all agent scratchpad metadata to .agents/teamwork/; never write source files there.
+- Do not perform broad refactorings outside the designated sprint ticket scope.
+
+[TYPE_SAFETY]
+- compiler_strictness: true
+- ban_any: true
+- explicit_return_types: true
+- zero_compile_errors: tsc --noEmit must exit with code 0
+
+[ZERO_TRUST_SECURITY]
+- validate_all_inputs: Zod schema validation mandatory on req.body, req.query, req.params.
+- enforce_user_isolation: Citizen queries must be scoped to req.user.uid. Never trust client state or ?all=true.
+- idor_prevention: NEVER execute findByIdAndUpdate/Delete on user resources; ALWAYS use compound filter { _id, userId }.
+- pii_redaction: NEVER expose raw firebaseUid, personal phone numbers, or officer private data on public routes.
+- gate_dev_bypass: (NODE_ENV === 'development' || NODE_ENV === 'test') && ENABLE_DEV_AUTH === 'true'.
+- prod_auth_rejection: Missing/dev tokens in production must return HTTP 401.
+- cors_whitelisting: Evaluate strictly against CORS_ALLOWED_ORIGINS; reject others with HTTP 403.
+
+[SECRET_HYGIENE_AND_BOOT]
+- fail_fast: backend/src/config/env.ts must parse process.env with Zod at startup.
+- prod_fatal_exit: Exit with code 1 if MONGODB_URI or GEMINI_API_KEY is missing in production.
+- sanitize_logs: Never print or expose real secret values or credentials.
+- gitignore_coverage: .env, .env.local, .env.*.local must be ignored in root, backend, frontend.
+
+[ARCHITECTURAL_INTEGRITY]
+- preserve_langgraph: 7-stage StateGraph in langGraphBrain.service.ts must remain intact.
+- preserve_fallbacks: 4-tier MongoDB and Neo4j memory emulator fallbacks must remain intact.
+
+[UI_UX_DESIGN_SYSTEM]
+- dark_tactical_os: Unified bg-slate-950 base with bg-slate-900/75 backdrop-blur-xl border-white/[0.08] panels.
+- semantic_status_tokens: Hazard rose-400, Warning amber-400, Verified emerald-400, AI Telemetry cyan-400.
+- typography: Inter for UI copy, JetBrains Mono font-mono tabular-nums for IDs, coordinates, SLA, dHash, percentages.
+- zero_cls: Always render glassmorphic skeleton loaders (animate-pulse bg-slate-800/60 rounded-xl) during loading.
+- accessibility: Focus ring focus-visible:ring-2 focus-visible:ring-cyan-400 and aria-label on all icon-only buttons.
+
+[CONTRACT_FIRST_AND_AUDIT]
+- single_source_status: Enforce canonical status enum ('Submitted' | 'Verified' | 'Assigned' | 'In_Progress' | 'Resolved' | 'Rejected'); never use 'AI_Assigned'.
+- rest_verb_parity: Partial state updates (/status, /override, /read) MUST use PATCH end-to-end.
+- immutable_audit_trail: Admin/officer status or override mutations must push structured entry to incident.statusHistory.
+- zero_hardcoded_hostnames: Never hardcode http://localhost:5000 in components; use centralized api client with VITE_API_BASE_URL.
+- command_center_standard: Integrate cmdk (Ctrl+K) and vaul drawers with zero layout shift and optimistic sonner toasts.
+
+[PERFORMANCE_AND_HARDWARE_LIFECYCLE]
+- zero_n_plus_one_ai: Never invoke embeddings or Gemini vision in historical candidate loops. Precompute 3072-dim vector + 64-bit dHash once and persist on document.
+- geospatial_indexing: Enforce 2dsphere index on GeoJSON coordinates and compound indexes on { status: 1, createdAt: -1 }.
+- bounded_vector_index: Cap FAISS in-memory vector index to 2,500 active items to prevent heap exhaustion.
+- camera_stream_cleanup: Always store MediaStream in useRef, stop all tracks on modal close and unmount, nullify srcObject, and catch getUserMedia rejections gracefully.
+
+[DISTRIBUTED_TRANSACTIONS_AND_SERVERLESS]
+- polyglot_saga_coordination: Use executeWithPolyglotTransaction for dual MongoDB/Neo4j mutations with atomic rollback/compensation.
+- serverless_connection_caching: Initialize MongoDB and Neo4j concurrently in api/index.ts and cache promise on globalThis.__aiCityDbInitPromise.
+- bounded_fallback_stores: Cap dbFallback.ts and neo4j.ts to 5,000 records with FIFO/LRU eviction and expose persistence health metrics.
+
+[QA_TESTING_STANDARDS]
+- hermetic_unit_tests: NEVER mock the function under test. Execute the REAL exported pure TypeScript helper directly. Zero external network calls, zero Gemini API calls in unit tests.
+- pure_helper_extraction: Export pure deterministic functions (computeDuplicateScore, detectDepartment, assessPriority, checkLuminance, isInGhmcBounds) to backend/src/utils/pureHelpers.ts for testability without breaking callers.
+- boundary_adversarial_coverage: Every test suite MUST cover (a) nominal input, (b) exact boundary threshold, (c) malicious/corrupted input (null, truncated buffers, SSRF IPs, ReDoS strings).
+- mandatory_test_gate: npm test must pass 100% with 0 failures before any defect is marked resolved.
+- test_import_depth: Never import more than 3 levels deep (../../..) in test files; restructure exports cleanly.
+
+[API_AND_SECURITY_REGRESSION_STANDARDS]
+- no_regression_security_lock: Every remediated OWASP vulnerability (DEF-SEC-02..07, DEF-BE-05, DEF-OPS-04) MUST have a failing-if-reintroduced Supertest regression test in backend/tests/security/.
+- negative_path_parity: Every protected Express route MUST be tested for both happy path (200/201) and denial paths (400, 401, 403, 404).
+- isolated_test_state: Every Supertest suite MUST reset in-memory/MongoMemoryServer collections in beforeEach/afterAll to guarantee test isolation.
+
+[CHAOS_INTEGRATION_AND_PERFORMANCE_STANDARDS]
+- deterministic_chaos_injection: Integration tests MUST verify failure modes (database disconnects, Neo4j timeouts, cold-start race conditions, and compensating rollbacks).
+- quantitative_perf_budgets: Assert p95 < 1500ms on 50-concurrency ingestion, < 150ms on duplicate lookups, < 200ms on spatial queries, and bounded memory (< 120MB heap growth).
+- frontend_bundle_budget: Keep initial entry JS chunk < 250kB (< 90kB gzipped) via React.lazy code-splitting and Vite manualChunks for maps, charts, and vendors.
+
+[DEVSECOPS_AND_OBSERVABILITY_STANDARDS]
+- immutable_container_zero_secrets: NEVER copy .env into Docker layers. Inject all credentials at runtime. Run production containers as non-root (USER node / unprivileged Nginx) on Alpine.
+- structured_security_telemetry: Log structured JSON security telemetry for auth rejections, RBAC denials, SSRF attempts, rate-limiting, and admin overrides with automated secret/token redaction.
+- non_bypassable_ci_gate: PRs to main must pass secret scan, tsc, lint, all 40 test suites, and Docker build checks.
+
+[VERIFICATION_COMMANDS]
+- backend_typecheck: cd backend && npx tsc --noEmit
+- frontend_typecheck: cd frontend && npx tsc --noEmit
+- backend_lint: cd backend && npm run lint
+- frontend_lint: cd frontend && npm run lint
+- backend_test: cd backend && npm test
+- frontend_test: cd frontend && npm test

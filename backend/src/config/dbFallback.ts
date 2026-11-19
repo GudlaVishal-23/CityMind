@@ -193,6 +193,14 @@ class MockQuery<T> {
     this.data = [...data];
   }
 
+  select(_fields?: any) {
+    return this;
+  }
+
+  lean() {
+    return this;
+  }
+
   sort(sortObj: any) {
     const key = Object.keys(sortObj)[0];
     const order = sortObj[key];
@@ -228,6 +236,68 @@ class MockQuery<T> {
   }
 }
 
+class MockSingleQuery<T> {
+  private doc: T | null;
+
+  constructor(doc: T | null) {
+    this.doc = doc;
+  }
+
+  select(_fields?: any) {
+    return this;
+  }
+
+  lean() {
+    return this;
+  }
+
+  async exec() {
+    return this.doc;
+  }
+
+  then(onfulfilled?: (value: T | null) => any, onrejected?: (reason: any) => any) {
+    return Promise.resolve(this.doc).then(onfulfilled, onrejected);
+  }
+}
+
+export const MAX_FALLBACK_RECORDS = 5000;
+
+export function enforceCollectionCapacity(collectionName: string): void {
+  const collection = memoryDb[collectionName];
+  if (!collection || collection.length < MAX_FALLBACK_RECORDS) return;
+
+  // Evict resolved, rejected, or read records first to preserve active operational state
+  let evictIdx = collection.findIndex(
+    item => item.status === 'Resolved' || item.status === 'Rejected' || item.read === true
+  );
+  if (evictIdx === -1) {
+    // FIFO eviction: remove oldest record
+    evictIdx = 0;
+  }
+  collection.splice(evictIdx, 1);
+  logger.debug(`[dbFallback] Evicted record at index ${evictIdx} from ${collectionName} to enforce capacity limit of ${MAX_FALLBACK_RECORDS}`);
+}
+
+export function getPersistenceHealth(): { mongoTier: string; isMongoConnected: boolean; memoryRecordCount: number } {
+  let totalMemoryRecords = 0;
+  for (const key of Object.keys(memoryDb)) {
+    totalMemoryRecords += memoryDb[key].length;
+  }
+
+  let mongoTier = 'Tier 4: In-Memory ES6 Proxy';
+  if (isMongoConnected) {
+    mongoTier = process.env.MONGODB_URI?.includes('mongodb+srv')
+      ? 'Tier 1: MongoDB Atlas Replica Set'
+      : 'Tier 2: MongoDB Local';
+  }
+
+  return {
+    mongoTier,
+    isMongoConnected,
+    memoryRecordCount: totalMemoryRecords
+  };
+}
+
 const mockDocument = (doc: any, collectionName: string) => {
   if (!doc) return null;
   return {
@@ -238,6 +308,7 @@ const mockDocument = (doc: any, collectionName: string) => {
       if (idx !== -1) {
         arr[idx] = { ...this };
       } else {
+        enforceCollectionCapacity(collectionName);
         arr.push(this);
       }
       return this;
@@ -308,10 +379,7 @@ export const createModelProxy = (modelName: string, realModel: any) => {
               return true;
             });
             const doc = mockDocument(filtered, modelName);
-            return {
-              then: (resolve: any) => resolve(doc),
-              exec: async () => doc
-            };
+            return new MockSingleQuery(doc);
           };
         }
 
@@ -319,15 +387,13 @@ export const createModelProxy = (modelName: string, realModel: any) => {
           return (id: any) => {
             const found = memoryDb[modelName].find((item: any) => item._id.toString() === id.toString());
             const doc = mockDocument(found, modelName);
-            return {
-              then: (resolve: any) => resolve(doc),
-              exec: async () => doc
-            };
+            return new MockSingleQuery(doc);
           };
         }
 
         if (prop === 'create') {
           return async (payload: any) => {
+            enforceCollectionCapacity(modelName);
             const newDoc = {
               _id: new Types.ObjectId(),
               createdAt: new Date(),

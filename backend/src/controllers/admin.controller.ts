@@ -1,8 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
-import Incident from '../models/incident.model';
+import Incident, { IIncident } from '../models/incident.model';
 import AdminOverride from '../models/override.model';
 import XAIService from '../services/xai.service';
+import Neo4jGraphService from '../services/neo4jGraph.service';
+import { executeWithPolyglotTransaction } from '../utils/transaction';
 import logger from '../utils/logger';
+import { logSecurityEvent } from '../utils/securityLogger';
 
 export class AdminController {
   public static async applyOverride(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -22,43 +25,101 @@ export class AdminController {
 
       logger.info(`[AdminController] Operator [${adminId}] applying override on Incident [${id}]. Rationale: "${reason}"`);
 
-      // Check fields and log changes
-      if (severity && severity !== incident.severity) {
-        await AdminOverride.create({
-          incidentId: incident._id,
-          adminId,
-          originalField: 'severity',
-          previousValue: incident.severity,
-          newValue: severity,
-          overrideReason: reason
-        });
-        incident.severity = severity;
-      }
+      const previousStatus = incident.status;
+      const previousSeverity = incident.severity;
+      const previousDept = incident.department;
 
-      if (department && department !== incident.department) {
-        await AdminOverride.create({
-          incidentId: incident._id,
-          adminId,
-          originalField: 'department',
-          previousValue: incident.department,
-          newValue: department,
-          overrideReason: reason
-        });
-        incident.department = department;
-      }
+      const updatedIncident = await executeWithPolyglotTransaction<IIncident>({
+        mongoWork: async (session) => {
+          // Check fields and log changes
+          if (severity && severity !== incident.severity) {
+            await AdminOverride.create([{
+              incidentId: incident._id,
+              adminId,
+              originalField: 'severity',
+              previousValue: incident.severity,
+              newValue: severity,
+              overrideReason: reason
+            }], session ? { session } : {});
+            incident.severity = severity;
+          }
 
-      // Transition status to In_Progress or AI_Assigned based on override activity
-      incident.status = 'In_Progress';
-      await incident.save();
+          if (department && department !== incident.department) {
+            await AdminOverride.create([{
+              incidentId: incident._id,
+              adminId,
+              originalField: 'department',
+              previousValue: incident.department,
+              newValue: department,
+              overrideReason: reason
+            }], session ? { session } : {});
+            incident.department = department;
+          }
+
+          // Transition status to In_Progress based on override activity
+          incident.status = 'In_Progress';
+
+          // DEF-BE-02: Enforce immutable statusHistory audit record for Administrative Overrides
+          const auditNote = `[ADMIN OVERRIDE] Reason: ${reason || 'Manual operator adjustment'} (Prior Status: ${previousStatus}, Dept: ${previousDept} -> ${incident.department}, Severity: ${previousSeverity} -> ${incident.severity})`;
+          const historyEntry = {
+            status: incident.status,
+            timestamp: new Date(),
+            note: auditNote,
+            actorId: req.user?.uid || req.user?.id || 'admin',
+            changedBy: req.user?.uid || req.user?.id || 'admin',
+            role: req.user?.role || 'admin'
+          };
+
+          if (!incident.statusHistory) {
+            incident.statusHistory = [];
+          }
+          incident.statusHistory.push(historyEntry);
+
+          await incident.save(session ? { session } : undefined);
+          return incident;
+        },
+        neo4jWork: async (doc) => {
+          await Neo4jGraphService.updateComplaintOverrideGraph(
+            doc._id.toString(),
+            doc.department,
+            doc.severity,
+            doc.status
+          );
+        },
+        compensateMongo: async () => {
+          // Compensating rollback on standalone/fallback tier
+          incident.department = previousDept;
+          incident.severity = previousSeverity;
+          incident.status = previousStatus;
+          await incident.save();
+        }
+      });
+
+      logSecurityEvent({
+        level: 'AUDIT',
+        eventType: 'ADMIN_OVERRIDE',
+        ip: req.ip,
+        method: req.method,
+        path: req.originalUrl || req.path,
+        actorUid: req.user?.uid || req.user?.id,
+        details: {
+          incidentId: updatedIncident._id.toString(),
+          previousSeverity,
+          newSeverity: updatedIncident.severity,
+          previousDept,
+          newDept: updatedIncident.department,
+          reason
+        }
+      });
 
       res.status(200).json({
         success: true,
         message: 'AI allocation updated. Log stored in Admin Overrides.',
         data: {
-          incidentId: incident._id.toString(),
-          severity: incident.severity,
-          department: incident.department,
-          status: incident.status,
+          incidentId: updatedIncident._id.toString(),
+          severity: updatedIncident.severity,
+          department: updatedIncident.department,
+          status: updatedIncident.status,
           modifiedByOperator: true
         }
       });

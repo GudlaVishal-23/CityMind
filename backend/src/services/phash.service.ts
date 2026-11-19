@@ -7,6 +7,7 @@
 // =============================================================================
 
 import logger from '../utils/logger';
+import { safeFetchImageBuffer } from '../utils/urlValidator';
 
 export class PHashService {
   /**
@@ -14,13 +15,10 @@ export class PHashService {
    */
   public static async generateHashFromUrl(imageUrl: string): Promise<string> {
     try {
-      const res = await fetch(imageUrl);
-      if (!res.ok) throw new Error(`HTTP ${res.status} fetching image`);
-      const arrayBuffer = await res.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+      const { buffer } = await safeFetchImageBuffer(imageUrl);
       return this.generateHashFromBuffer(buffer);
     } catch (err) {
-      logger.warn(`[PHashService] Image download failed for [${imageUrl}], generating deterministic fallback hash: ${err}`);
+      logger.warn(`[PHashService] Safe image fetch failed for [${imageUrl}], generating deterministic fallback hash: ${err}`);
       return this.generateFallbackHash(imageUrl);
     }
   }

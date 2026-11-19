@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+.git
+.gitignore
+dist
+coverage
+tests
+*.md
+.eslintrc.json
+.eslintignore
+tsconfig.test.json
+vitest.config.ts

@@ -6,8 +6,8 @@ import 'leaflet/dist/leaflet.css';
 import useUIStore from '@store/uiStore';
 import { api } from '@config/api';
 import { 
-  LogOut, MapPin, Search, 
-  Activity, Cpu, Layers, User
+  LogOut, MapPin, Search, Loader2,
+  Activity, Cpu, Layers, User, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -61,7 +61,21 @@ export const OperationsCenterPage: React.FC = () => {
   const [loadingAudit, setLoadingAudit] = useState(false);
   
   // Search / Filters state
-  const [search, setSearch] = useState('');
+  const [rawSearch, setRawSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    if (rawSearch !== debouncedSearch) {
+      setIsSearching(true);
+    }
+    const timer = setTimeout(() => {
+      setDebouncedSearch(rawSearch);
+      setIsSearching(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [rawSearch, debouncedSearch]);
+
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [deptFilter, setDeptFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -77,10 +91,18 @@ export const OperationsCenterPage: React.FC = () => {
   // Resolve Action state
   const [resolving, setResolving] = useState(false);
 
-  // Fetch Dashboard Stats & Queue
-  const fetchDashboardData = async () => {
+  // Live Sync & Telemetry state (Task 4)
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<Date>(new Date());
+
+  // Fetch Dashboard Stats & Queue with non-blocking background refresh support (CLS = 0)
+  const fetchDashboardData = async (isBackground: boolean = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) {
+        setLoading(true);
+      } else {
+        setIsSyncing(true);
+      }
       const [incidentsRes, healthRes] = await Promise.all([
         api.get('/incidents?all=true&limit=100'),
         api.get('/analytics/health')
@@ -97,15 +119,27 @@ export const OperationsCenterPage: React.FC = () => {
         departments: { PWD: 100, ELECTRICITY: 100, WATER_BOARD: 100, SANITATION: 100 },
         activeIncidents: { Critical: 0, High: 0, Medium: 0, Low: 0 }
       });
+      setLastSynced(new Date());
     } catch (err) {
       console.error('[OperationsCenterPage] Error fetching dashboard data:', err);
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      } else {
+        setIsSyncing(false);
+      }
     }
   };
 
+  // Visibility-aware background polling every 30s
   useEffect(() => {
     fetchDashboardData();
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchDashboardData(true);
+      }
+    }, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   // Fetch Audit Log for the Selected Incident
@@ -216,11 +250,11 @@ export const OperationsCenterPage: React.FC = () => {
   // Filters logic
   const filteredIncidents = incidents.filter((inc) => {
     const matchesSearch = 
-      inc.title.toLowerCase().includes(search.toLowerCase()) || 
-      inc.description.toLowerCase().includes(search.toLowerCase());
+      inc.title.toLowerCase().includes(debouncedSearch.toLowerCase()) || 
+      inc.description.toLowerCase().includes(debouncedSearch.toLowerCase());
     const matchesSeverity = severityFilter === 'all' || inc.severity === severityFilter;
     const matchesDept = deptFilter === 'all' || inc.department === deptFilter;
-    const matchesStatus = statusFilter === 'all' || inc.status === statusFilter || (statusFilter === 'Assigned' && (inc.status === 'Assigned' || inc.status === 'AI_Assigned')) || (statusFilter === 'AI_Assigned' && (inc.status === 'Assigned' || inc.status === 'AI_Assigned'));
+    const matchesStatus = statusFilter === 'all' || inc.status === statusFilter;
     return matchesSearch && matchesSeverity && matchesDept && matchesStatus;
   });
 
@@ -277,6 +311,27 @@ export const OperationsCenterPage: React.FC = () => {
             >
               Citizen Node
             </button>
+            {/* Live Telemetry & Visibility-Aware Sync Indicator (Task 4) */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 border border-slate-200/80 rounded-xl text-xs">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="text-[11px] font-mono tabular-nums text-slate-600 hidden md:inline">
+                Last synced: {lastSynced.toLocaleTimeString()}
+              </span>
+              <button
+                type="button"
+                onClick={() => fetchDashboardData(true)}
+                disabled={isSyncing}
+                className="p-1 hover:text-sky-600 rounded-lg transition-colors flex items-center gap-1 text-slate-600"
+                title="Sync Live Telemetry"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-sky-600' : ''}`} />
+                <span className="text-[10px] font-bold font-mono uppercase hidden lg:inline">Sync Now</span>
+              </button>
+            </div>
+
             <NotificationBell />
             <button
               onClick={handleLogout}
@@ -347,14 +402,21 @@ export const OperationsCenterPage: React.FC = () => {
           {/* Search and Filters panel */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
             <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Search incident descriptions..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-sky-400 transition-colors font-medium"
+                value={rawSearch}
+                maxLength={100}
+                onChange={(e) => setRawSearch(e.target.value.slice(0, 100))}
+                className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-sky-400 transition-colors font-medium"
               />
+              {/* Zero Cumulative Layout Shift (CLS = 0) fixed-dimension indicator */}
+              <div className="absolute right-3.5 top-3 w-4 h-4 flex items-center justify-center pointer-events-none">
+                {isSearching && (
+                  <Loader2 className="w-4 h-4 text-sky-500 animate-spin" />
+                )}
+              </div>
             </div>
             
             <div className="grid grid-cols-3 gap-2">
@@ -397,9 +459,11 @@ export const OperationsCenterPage: React.FC = () => {
                 >
                   <option value="all">All</option>
                   <option value="Submitted">Submitted</option>
-                  <option value="Assigned">Assigned / AI Assigned</option>
+                  <option value="Verified">Verified</option>
+                  <option value="Assigned">Assigned</option>
                   <option value="In_Progress">In Progress</option>
                   <option value="Resolved">Resolved</option>
+                  <option value="Rejected">Rejected</option>
                 </select>
               </div>
             </div>

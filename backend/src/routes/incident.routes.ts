@@ -4,6 +4,8 @@ import IncidentController from '../controllers/incident.controller';
 import { authenticateJWT } from '../middleware/auth.middleware';
 import { validateBody } from '../middleware/validate.middleware';
 import { uploadBuffer } from '../config/cloudinary';
+import { validateSafeImageUrl } from '../utils/urlValidator';
+import { incidentIngestionLimiter, mediaUploadLimiter } from '../middleware/rateLimit.middleware';
 
 const router = Router();
 
@@ -11,7 +13,19 @@ const router = Router();
 const incidentIngestSchema = z.object({
   title: z.string().min(5, 'Title must be at least 5 characters.').max(100),
   description: z.string().min(10, 'Description must be at least 10 characters.'),
-  imageUrl: z.string().min(1, 'A valid image URL is required.'),
+  imageUrl: z.string()
+    .min(1, 'A valid image URL is required.')
+    .superRefine((url, ctx) => {
+      try {
+        validateSafeImageUrl(url);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Image URL must be a valid HTTPS URL hosted on an authorized domain.';
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: msg
+        });
+      }
+    }),
   location: z.object({
     lat: z.number().min(-90).max(90),
     lng: z.number().min(-180).max(180)
@@ -22,6 +36,7 @@ const incidentIngestSchema = z.object({
 router.post(
   '/upload',
   authenticateJWT,
+  mediaUploadLimiter,
   async (req, res, next) => {
     try {
       const { image } = req.body;
@@ -50,6 +65,7 @@ router.post(
 router.post(
   '/',
   authenticateJWT,
+  incidentIngestionLimiter,
   validateBody(incidentIngestSchema),
   IncidentController.create
 );
@@ -58,6 +74,12 @@ router.get(
   '/',
   authenticateJWT,
   IncidentController.getIncidents
+);
+
+router.get(
+  '/:id',
+  authenticateJWT,
+  IncidentController.getIncidentById
 );
 
 export default router;

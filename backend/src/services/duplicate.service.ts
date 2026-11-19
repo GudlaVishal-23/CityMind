@@ -35,6 +35,8 @@ export interface DuplicateAnalysisResult {
     spatialDistanceMeters: number;
   };
   explanation: string;
+  textEmbedding?: number[];
+  imageDHash?: string;
 }
 
 export class DuplicateService {
@@ -64,54 +66,40 @@ export class DuplicateService {
 
   /**
    * Main production workflow for duplicate complaint detection.
+   * Remediates DEF-BE-03: Precomputes embeddings & dHash once; eliminates N+1 AI/network loops over candidates.
    */
   public static async analyzeDuplicate(
     complaintText: string,
     imageUrl: string,
     location: { lat: number; lng: number },
-    category: string
+    category: string,
+    precomputedEmbedding?: number[],
+    precomputedDHash?: string
   ): Promise<DuplicateAnalysisResult> {
     const startTime = Date.now();
     logger.info(`[DuplicateService] Starting multi-modal duplicate detection for location [${location.lat}, ${location.lng}]`);
 
-    // Step 1: Generate Gemini Embedding
-    const textEmbedding = await this.generateEmbedding(complaintText);
+    // Step 1: Precompute or reuse 3072-dim text embedding for query (1 single API call max)
+    const textEmbedding = (precomputedEmbedding && precomputedEmbedding.length > 0)
+      ? precomputedEmbedding
+      : await this.generateEmbedding(complaintText);
 
-    // Step 2 & 5: Compute pHash for input image
-    const inputPHash = await PHashService.generateHashFromUrl(imageUrl);
+    // Step 2: Precompute or reuse 64-bit dHash/pHash for query image (1 single fetch max)
+    const inputPHash = (precomputedDHash && precomputedDHash.length > 0)
+      ? precomputedDHash
+      : await PHashService.generateHashFromUrl(imageUrl);
 
-    // Fetch active candidates from MongoDB within 48 hours
+    // Fetch active candidates from MongoDB within 48 hours using projection and lean query
     const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
     const recentIncidents = await Incident.find({
       isDuplicate: false,
       status: { $ne: 'Resolved' },
       createdAt: { $gte: fortyEightHoursAgo }
-    }).sort({ createdAt: -1 }).limit(100);
-
-    // Ensure candidate incidents are indexed in FAISS
-    for (const inc of recentIncidents as any[]) {
-      const incLat = inc.location?.coordinates?.[1];
-      const incLng = inc.location?.coordinates?.[0];
-      if (incLat == null || incLng == null) continue;
-
-      const incIdStr = inc._id.toString();
-      // Generate embedding & hash for candidates if not yet indexed in FAISS
-      const incText = `${inc.title} ${inc.description}`;
-      const incEmbedding = await this.generateEmbedding(incText);
-      const incPHash = await PHashService.generateHashFromUrl(inc.imageUrl);
-
-      FaissIndexService.addIndexEntry({
-        incidentId: incIdStr,
-        vector: incEmbedding,
-        category: inc.category,
-        location: { lat: incLat, lng: incLng },
-        pHash: incPHash,
-        createdAt: inc.createdAt
-      });
-    }
-
-    // Step 2 & 3: Search FAISS Index for nearest vector matches
-    const faissResults = FaissIndexService.searchNearestVectors(textEmbedding, 10, 0.0);
+    })
+      .select('_id title description category location embedding imageDHash createdAt')
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
 
     let bestMatchCandidate: {
       incidentId: string;
@@ -123,12 +111,41 @@ export class DuplicateService {
 
     const nearbyIncidentIds: string[] = [];
 
-    // Step 4 & 5: Compare GPS Distance and pHash Visual Similarity across candidates
+    // Step 3, 4, 5: Compare GPS Distance, Cosine Similarity, and pHash purely in CPU memory
+    // ZERO Gemini calls or external image downloads inside this loop!
     for (const incident of recentIncidents as any[]) {
-      const incIdStr = incident._id.toString();
       const incLat = incident.location?.coordinates?.[1];
       const incLng = incident.location?.coordinates?.[0];
       if (incLat == null || incLng == null) continue;
+
+      const incIdStr = incident._id.toString();
+
+      // Retrieve precomputed vector from document or local zero-API fallback
+      let incEmbedding = incident.embedding;
+      if (!incEmbedding || incEmbedding.length === 0) {
+        const cached = FaissIndexService.getEntry(incIdStr);
+        if (cached?.vector) {
+          incEmbedding = cached.vector;
+        } else {
+          // Zero-API local word-hash fallback vector
+          incEmbedding = this.generateFallbackVector(`${incident.title} ${incident.description}`);
+        }
+      }
+
+      // Precomputed image dHash from document or cache
+      const candidatePHash = incident.imageDHash || FaissIndexService.getEntry(incIdStr)?.pHash || '';
+
+      // Keep FAISS index synchronized within bounded memory (DEF-PERF-01)
+      if (!FaissIndexService.hasEntry(incIdStr)) {
+        FaissIndexService.addIndexEntry({
+          incidentId: incIdStr,
+          vector: incEmbedding,
+          category: incident.category,
+          location: { lat: incLat, lng: incLng },
+          pHash: candidatePHash,
+          createdAt: incident.createdAt
+        });
+      }
 
       // Compute GPS Haversine distance in meters
       const distMeters = this.haversineDistance(location.lat, location.lng, incLat, incLng);
@@ -137,13 +154,13 @@ export class DuplicateService {
         nearbyIncidentIds.push(incIdStr);
       }
 
-      // Retrieve FAISS vector cosine similarity
-      const faissMatch = faissResults.find(r => r.entry.incidentId === incIdStr);
-      const textCosineSim = faissMatch ? faissMatch.cosineSimilarity : 0.5;
+      // Compute Text Cosine Similarity purely in memory
+      const textCosineSim = FaissIndexService.computeCosineSimilarity(textEmbedding, incEmbedding);
 
-      // Compute pHash Visual Similarity
-      const candidatePHash = faissMatch?.entry.pHash || await PHashService.generateHashFromUrl(incident.imageUrl);
-      const visualSim = PHashService.computeVisualSimilarity(inputPHash, candidatePHash);
+      // Compute Visual Similarity using precomputed 64-bit perceptual hashes
+      const visualSim = (inputPHash && candidatePHash)
+        ? PHashService.computeVisualSimilarity(inputPHash, candidatePHash)
+        : 0.0;
 
       // Compute Spatial Score (1.0 at 0m, decaying to 0.0 at 200m)
       const spatialScore = Math.max(0, 1 - distMeters / 200);
@@ -152,7 +169,7 @@ export class DuplicateService {
       const categoryBonus = (incident.category === category) ? 0.15 : 0;
 
       // Step 6: Multi-Factor Duplicate Score Calculation
-      // Weighted formula: 35% Text Cosine + 35% Spatial Proximity + 30% Visual pHash
+      // Weighted formula: 35% Text Cosine + 35% Spatial Proximity + 30% Visual pHash + Category Bonus
       let duplicateScore = (0.35 * textCosineSim) + (0.35 * spatialScore) + (0.30 * visualSim) + categoryBonus;
       duplicateScore = parseFloat(Math.min(1.0, Math.max(0.0, duplicateScore)).toFixed(4));
 
@@ -168,7 +185,7 @@ export class DuplicateService {
     }
 
     const duration = Date.now() - startTime;
-    logger.info(`[DuplicateService] Multi-modal duplicate scan completed in ${duration}ms. FAISS Index Size: ${FaissIndexService.getIndexSize()}`);
+    logger.info(`[DuplicateService] Multi-modal duplicate scan completed in ${duration}ms. Candidates evaluated: ${recentIncidents.length}. FAISS Index Size: ${FaissIndexService.getIndexSize()}`);
 
     if (!bestMatchCandidate || bestMatchCandidate.duplicateScore < 0.45) {
       return {
@@ -182,7 +199,9 @@ export class DuplicateService {
           visualPhashSimilarity: bestMatchCandidate?.visualSim || 0.0,
           spatialDistanceMeters: bestMatchCandidate?.distMeters || 0
         },
-        explanation: 'No significant spatial, visual, or semantic duplicate matches detected.'
+        explanation: 'No significant spatial, visual, or semantic duplicate matches detected.',
+        textEmbedding,
+        imageDHash: inputPHash
       };
     }
 
@@ -205,7 +224,9 @@ export class DuplicateService {
         visualPhashSimilarity: bestMatchCandidate.visualSim,
         spatialDistanceMeters: bestMatchCandidate.distMeters
       },
-      explanation: `Matched candidate incident #${bestMatchCandidate.incidentId.substring(18)} (${bestMatchCandidate.distMeters}m away) with ${(bestMatchCandidate.duplicateScore * 100).toFixed(1)}% confidence.`
+      explanation: `Matched candidate incident #${bestMatchCandidate.incidentId.substring(Math.max(0, bestMatchCandidate.incidentId.length - 6))} (${bestMatchCandidate.distMeters}m away) with ${(bestMatchCandidate.duplicateScore * 100).toFixed(1)}% confidence.`,
+      textEmbedding,
+      imageDHash: inputPHash
     };
   }
 

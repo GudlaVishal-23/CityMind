@@ -24,14 +24,31 @@ export interface VectorSearchResult {
 }
 
 export class FaissIndexService {
+  public static readonly MAX_INDEX_ENTRIES = 2500;
   private static index: Map<string, VectorIndexEntry> = new Map();
 
   /**
    * Adds or updates a document vector in the FAISS index.
+   * DEF-PERF-01: Bounded memory vector cache capped to MAX_INDEX_ENTRIES (2,500) to prevent heap leaks.
    */
   public static addIndexEntry(entry: VectorIndexEntry): void {
+    if (this.index.size >= this.MAX_INDEX_ENTRIES && !this.index.has(entry.incidentId)) {
+      // LRU/FIFO eviction of the oldest vector entry
+      const oldestKey = this.index.keys().next().value;
+      if (oldestKey) {
+        this.index.delete(oldestKey);
+      }
+    }
     this.index.set(entry.incidentId, entry);
     logger.debug(`[FaissIndexService] Vector indexed for incident [${entry.incidentId}]. Index size: ${this.index.size}`);
+  }
+
+  public static hasEntry(incidentId: string): boolean {
+    return this.index.has(incidentId);
+  }
+
+  public static getEntry(incidentId: string): VectorIndexEntry | undefined {
+    return this.index.get(incidentId);
   }
 
   /**

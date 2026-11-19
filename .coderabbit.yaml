@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/coderabbit-overrides.v2.json
+# ==============================================================================
+# CodeRabbit AI PR Governance Configuration for AI CITY
+# ==============================================================================
+version: "2"
+language: "en-US"
+tone_instructions: "Authoritative, security-focused, architectural, concise, and uncompromising on engineering invariants."
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+      - "master"
+      - "release/*"
+
+  path_instructions:
+    - path: "backend/**/*"
+      instructions: |
+        Adhere strictly to AGENTS.md:
+        1. Zero-Trust Authorization: NEVER trust client-supplied role state or query flags (?all=true). ALWAYS verify userId: req.user.uid and RBAC middleware (requireRole(['admin', 'officer'])).
+        2. IDOR Prevention: NEVER use findByIdAndUpdate or findByIdAndDelete on user-scoped resources. ALWAYS use findOneAndUpdate({ _id, userId }) with Mongoose ObjectId validation.
+        3. PII Redaction: NEVER return raw firebaseUid, phone, or home addresses on citizen endpoints. Always select('-userId -reporterPhone -reporterEmail').
+        4. SSRF Defense: NEVER invoke raw fetch(imageUrl). ALWAYS call safeFetchImageBuffer() with protocol checks, private IP blocking, and CDN whitelist.
+        5. Zero Unindexed Queries: Check for 2dsphere and compound index usage on location and status filters.
+        6. Zero N+1 Loops: NEVER invoke Gemini Vision or embeddings inside a database iteration loop. Precompute embeddings and dHash once during ingestion.
+        7. Audit Trails: All status or priority updates in admin/officer controllers MUST atomically push a structured record to incident.statusHistory.
+        8. Type Safety: Zero 'any' types in newly authored backend functions.
+
+    - path: "frontend/**/*"
+      instructions: |
+        Adhere strictly to frontend/AGENTS.md:
+        1. Zero Hardcoded Hostnames: NEVER use 'http://localhost:5000' or raw fetch(). ALWAYS use the centralized Axios 'api' client from src/config/api.ts.
+        2. Clean Hardware Release: All camera modals MUST stop active MediaStreamTracks on unmount and close.
+        3. Route-Level Code Splitting: All top-level page routes in routes/index.tsx MUST be loaded via React.lazy() and wrapped in Suspense with TacticalRouteSkeleton.
+        4. Performance Budget: The initial JavaScript entry chunk MUST remain under 250 kB raw (< 90 kB gzipped).
+        5. Theme Consistency: Follow dark municipal glassmorphism with high contrast (APCA / WCAG AAA). Zero light/dark theme inversions or unreadable muted text.
+
+    - path: ".github/**/*"
+      instructions: |
+        Verify non-bypassable CI rules:
+        1. Ensure secret scanners, static typechecks, linter, full 40 Vitest suites, and Docker builds are enforced.
+        2. Ensure no hardcoded secrets or production credentials exist in workflow files.
+
+chat:
+  auto_reply: true

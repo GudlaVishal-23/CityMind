@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Camera, CheckCircle2, AlertTriangle, RefreshCw, X, ChevronRight, Sparkles, Upload, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Camera, CameraOff, CheckCircle2, AlertTriangle, RefreshCw, X, ChevronRight, Sparkles, Upload, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface MultiAngleCameraModalProps {
@@ -63,27 +63,35 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const isMountedRef = useRef<boolean>(true);
 
-  // Initialize camera stream when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      startCamera(facingMode);
-    } else {
-      stopCamera();
-      setCapturedSnaps([]);
-      setCurrentStep(0);
-      setQualityError(null);
-      setCameraErrorMsg(null);
+  // Idempotent camera track shutdown and element detachment (DEF-FEAT-02)
+  const stopCameraStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track: MediaStreamTrack) => {
+        try {
+          track.stop();
+        } catch (e) {
+          console.warn('[Camera] Track stop error:', e);
+        }
+      });
+      streamRef.current = null;
     }
-    return () => {
-      stopCamera();
-    };
-  }, [isOpen]);
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+  }, []);
 
-  const startCamera = async (targetFacingMode: 'user' | 'environment' = facingMode) => {
+  const handleClose = useCallback(() => {
+    stopCameraStream();
+    onClose();
+  }, [stopCameraStream, onClose]);
+
+  const startCamera = useCallback(async (targetFacingMode: 'user' | 'environment' = facingMode) => {
     setQualityError(null);
     setCameraErrorMsg(null);
-    stopCamera();
+    stopCameraStream();
 
     try {
       let stream: MediaStream | null = null;
@@ -103,6 +111,14 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
         }
       }
 
+      // Race condition defense: If modal was closed or unmounted while awaiting permission, stop tracks immediately
+      if (!isMountedRef.current || !isOpen) {
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+        return;
+      }
+
       streamRef.current = stream;
       setIsCameraActive(true);
 
@@ -113,22 +129,44 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
     } catch (err: any) {
       console.warn('[Camera] Live webcam stream unavailable or permission denied:', err);
       setIsCameraActive(false);
-      setCameraErrorMsg(err.message || 'Webcam access unavailable or permission denied.');
+
+      let friendlyMsg = 'Webcam access unavailable or permission denied.';
+      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+        friendlyMsg = 'Camera permission denied. Please allow camera permissions in your browser to capture real-time civic hazard evidence.';
+      } else if (err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError') {
+        friendlyMsg = 'No camera hardware detected on this device. You can upload an existing photo or use sample evidence.';
+      } else if (err?.name === 'NotReadableError' || err?.name === 'TrackStartError') {
+        friendlyMsg = 'Camera hardware is locked by another process or application. Please close conflicting camera tabs and retry.';
+      } else if (err?.message) {
+        friendlyMsg = err.message;
+      }
+
+      setCameraErrorMsg(friendlyMsg);
     }
-  };
+  }, [facingMode, isOpen, stopCameraStream]);
+
+  // Initialize camera stream when modal opens; clean up completely on unmount/close
+  useEffect(() => {
+    isMountedRef.current = true;
+    if (isOpen) {
+      startCamera(facingMode);
+    } else {
+      stopCameraStream();
+      setCapturedSnaps([]);
+      setCurrentStep(0);
+      setQualityError(null);
+      setCameraErrorMsg(null);
+    }
+    return () => {
+      isMountedRef.current = false;
+      stopCameraStream();
+    };
+  }, [isOpen, facingMode, startCamera, stopCameraStream]);
 
   const toggleFacingMode = () => {
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(nextMode);
     startCamera(nextMode);
-  };
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop());
-      streamRef.current = null;
-    }
-    setIsCameraActive(false);
   };
 
   useEffect(() => {
@@ -232,13 +270,13 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
       if (currentStep < 2) {
         setCurrentStep(currentStep + 1);
       } else {
-        stopCamera();
+        stopCameraStream();
         onComplete({
           angle1: updated[0],
           angle2: updated[1],
           angle3: updated[2]
         });
-        onClose();
+        handleClose();
       }
     }, 300);
   };
@@ -257,13 +295,13 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
     if (currentStep < 2) {
       setCurrentStep(currentStep + 1);
     } else {
-      stopCamera();
+      stopCameraStream();
       onComplete({
         angle1: updated[0],
         angle2: updated[1],
         angle3: updated[2]
       });
-      onClose();
+      handleClose();
     }
   };
 
@@ -283,13 +321,13 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
       if (currentStep < 2) {
         setCurrentStep(currentStep + 1);
       } else {
-        stopCamera();
+        stopCameraStream();
         onComplete({
           angle1: updated[0],
           angle2: updated[1],
           angle3: updated[2]
         });
-        onClose();
+        handleClose();
       }
     };
     reader.readAsDataURL(file);
@@ -329,7 +367,7 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
               <span>{facingMode === 'environment' ? '📷 Back Cam' : '🤳 Front Cam'}</span>
             </button>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
             >
               <X className="w-4 h-4" />
@@ -385,29 +423,47 @@ export const MultiAngleCameraModal: React.FC<MultiAngleCameraModalProps> = ({
               className="w-full h-full object-cover"
             />
           ) : (
-            <div className="text-center p-6 space-y-3">
-              <Camera className="w-12 h-12 text-sky-400/80 mx-auto animate-pulse" />
-              <p className="text-xs font-mono text-slate-300 max-w-xs mx-auto">
-                {cameraErrorMsg || 'Webcam stream inactive or covered.'}
-              </p>
-              <div className="flex items-center justify-center gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={handleUseSamplePhoto}
-                  className="px-3.5 py-1.5 bg-sky-500/20 border border-sky-400/40 text-sky-300 text-xs font-mono font-bold rounded-xl hover:bg-sky-500/30 transition-all flex items-center gap-1"
-                >
-                  ⚡ Use Sample Angle {currentStep + 1}
-                </button>
+            <div className="p-6 text-center max-w-md mx-auto w-full">
+              <div className="bg-slate-900/75 backdrop-blur-xl border border-amber-500/30 rounded-2xl p-6 shadow-2xl space-y-4">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                  <CameraOff className="w-7 h-7 text-amber-400" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black font-display text-white tracking-wide">
+                    Camera Access Unavailable
+                  </h4>
+                  <p className="text-xs font-mono text-slate-300 mt-1.5 leading-relaxed">
+                    {cameraErrorMsg || 'Webcam stream inactive or permission denied.'}
+                  </p>
+                </div>
 
-                <label className="px-3.5 py-1.5 bg-sky-600 text-white text-xs font-bold rounded-xl hover:bg-sky-700 transition-all flex items-center gap-1.5 cursor-pointer shadow-md">
-                  <Upload className="w-3.5 h-3.5" /> Upload File
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUploadFallback}
-                    className="hidden"
-                  />
-                </label>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => startCamera(facingMode)}
+                    className="w-full sm:w-auto px-4 py-2 bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-mono font-bold rounded-xl hover:bg-amber-500/30 transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Retry Camera
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleUseSamplePhoto}
+                    className="w-full sm:w-auto px-3.5 py-2 bg-sky-500/20 border border-sky-400/40 text-sky-300 text-xs font-mono font-bold rounded-xl hover:bg-sky-500/30 transition-all flex items-center justify-center gap-1"
+                  >
+                    ⚡ Sample {currentStep + 1}
+                  </button>
+
+                  <label className="w-full sm:w-auto px-4 py-2 bg-sky-600 text-white text-xs font-bold rounded-xl hover:bg-sky-700 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md">
+                    <Upload className="w-3.5 h-3.5" /> Upload File
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUploadFallback}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
               </div>
             </div>
           )}

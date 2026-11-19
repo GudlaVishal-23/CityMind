@@ -4,7 +4,7 @@ import useUIStore from '@store/uiStore';
 import { api } from '@config/api';
 import NotificationBell from '../../notifications/NotificationBell';
 import { 
-  FileText, Clock, CheckCircle2, Plus, LogOut, Building2
+  FileText, Clock, CheckCircle2, Plus, LogOut, Building2, Search, Loader2
 } from 'lucide-react';
 
 export const CitizenTrackingPage: React.FC = () => {
@@ -13,6 +13,32 @@ export const CitizenTrackingPage: React.FC = () => {
   const [incidents, setIncidents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIncident, setSelectedIncident] = useState<any | null>(null);
+
+  // Safe debounced search state
+  const [rawSearch, setRawSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    if (rawSearch !== debouncedSearch) {
+      setIsSearching(true);
+    }
+    const timer = setTimeout(() => {
+      setDebouncedSearch(rawSearch);
+      setIsSearching(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [rawSearch, debouncedSearch]);
+
+  const filteredIncidents = incidents.filter((inc) => {
+    if (!debouncedSearch.trim()) return true;
+    const term = debouncedSearch.toLowerCase();
+    return (
+      (inc.title && inc.title.toLowerCase().includes(term)) ||
+      (inc.description && inc.description.toLowerCase().includes(term)) ||
+      (inc.department && inc.department.toLowerCase().includes(term))
+    );
+  });
 
   const fetchUserIncidents = async () => {
     try {
@@ -143,34 +169,58 @@ export const CitizenTrackingPage: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* List Column */}
             <div className="lg:col-span-1 space-y-3">
-              {incidents.map((inc) => (
-                <div
-                  key={inc._id}
-                  onClick={() => setSelectedIncident(inc)}
-                  className={`p-5 rounded-2xl border cursor-pointer transition-all bg-white ${
-                    selectedIncident?._id === inc._id
-                      ? 'border-sky-500 ring-2 ring-sky-500/20 shadow-md'
-                      : 'border-slate-200 hover:border-sky-300 hover:shadow-sm'
-                  }`}
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <span className={`px-2.5 py-0.5 border text-[10px] font-mono font-bold rounded-md uppercase tracking-wider ${statusColors[inc.status] || 'bg-slate-100 text-slate-600'}`}>
-                      {inc.status?.replace('_', ' ') || 'Submitted'}
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      #{inc._id.substring(inc._id.length - 6)}
-                    </span>
-                  </div>
-
-                  <h3 className="text-sm font-bold text-slate-900 mb-1 line-clamp-1">{inc.title}</h3>
-                  <p className="text-xs text-slate-500 line-clamp-2 mb-3 leading-relaxed">{inc.description}</p>
-
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 border-t border-slate-100 pt-3">
-                    <span className="font-mono text-sky-700 font-semibold">{inc.department}</span>
-                    <span className="font-mono text-slate-600">{getEtaBySeverity(inc.severity)}</span>
-                  </div>
+              {/* Debounced Safe Search Bar (CLS = 0) */}
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Filter your complaints..."
+                  value={rawSearch}
+                  maxLength={100}
+                  onChange={(e) => setRawSearch(e.target.value.slice(0, 100))}
+                  className="w-full pl-9 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-sky-400 transition-colors font-medium shadow-xs"
+                />
+                <div className="absolute right-3.5 top-3 w-4 h-4 flex items-center justify-center pointer-events-none">
+                  {isSearching && (
+                    <Loader2 className="w-4 h-4 text-sky-500 animate-spin" />
+                  )}
                 </div>
-              ))}
+              </div>
+
+              {filteredIncidents.length === 0 ? (
+                <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-xs text-slate-500">
+                  No complaints found matching "{debouncedSearch}".
+                </div>
+              ) : (
+                filteredIncidents.map((inc) => (
+                  <div
+                    key={inc._id}
+                    onClick={() => setSelectedIncident(inc)}
+                    className={`p-5 rounded-2xl border cursor-pointer transition-all bg-white ${
+                      selectedIncident?._id === inc._id
+                        ? 'border-sky-500 ring-2 ring-sky-500/20 shadow-md'
+                        : 'border-slate-200 hover:border-sky-300 hover:shadow-sm'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <span className={`px-2.5 py-0.5 border text-[10px] font-mono font-bold rounded-md uppercase tracking-wider ${statusColors[inc.status] || 'bg-slate-100 text-slate-600'}`}>
+                        {inc.status?.replace('_', ' ') || 'Submitted'}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        #{inc._id.substring(inc._id.length - 6)}
+                      </span>
+                    </div>
+
+                    <h3 className="text-sm font-bold text-slate-900 mb-1 line-clamp-1">{inc.title}</h3>
+                    <p className="text-xs text-slate-500 line-clamp-2 mb-3 leading-relaxed">{inc.description}</p>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 border-t border-slate-100 pt-3">
+                      <span className="font-mono text-sky-700 font-semibold">{inc.department}</span>
+                      <span className="font-mono text-slate-600">{getEtaBySeverity(inc.severity)}</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
 
             {/* Tracking Detail Timeline Column */}

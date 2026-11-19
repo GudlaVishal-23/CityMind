@@ -9,7 +9,7 @@
 //   5. Graph Ingestion linking Complaint -> Ward -> Department -> Asset
 // =============================================================================
 
-import { runCypherQuery, memoryGraph } from '../config/neo4j';
+import { runCypherQuery, memoryGraph, enforceGraphCapacity } from '../config/neo4j';
 import logger from '../utils/logger';
 
 export interface GraphRouteResult {
@@ -243,6 +243,9 @@ export class Neo4jGraphService {
     try {
       await runCypherQuery(cypher, data);
 
+      // Enforce bounded memory on fallback emulator (DEF-DATA-01)
+      enforceGraphCapacity();
+
       // Add to in-memory emulator store for fallback consistency
       memoryGraph.complaints.push({
         complaintId: data.complaintId,
@@ -258,6 +261,81 @@ export class Neo4jGraphService {
       logger.info(`[Neo4jGraphService] Complaint node [${data.complaintId}] successfully linked in Graph DB`);
     } catch (error) {
       logger.error(`[Neo4jGraphService] Graph ingestion error: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Updates status of a complaint node in Graph DB.
+   */
+  public static async updateComplaintStatusGraph(complaintId: string, status: string): Promise<void> {
+    logger.info(`[Neo4jGraphService] Updating status for complaint [${complaintId}] to ${status} in Graph DB`);
+    const cypher = `
+      MATCH (c:Complaint {complaintId: $complaintId})
+      SET c.status = $status, c.updatedAt = datetime()
+    `;
+    try {
+      await runCypherQuery(cypher, { complaintId, status });
+      const item = memoryGraph.complaints.find(c => c.complaintId === complaintId);
+      if (item) {
+        item.status = status;
+      }
+    } catch (error) {
+      logger.error(`[Neo4jGraphService] Graph status update error: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Updates department, severity and status for a complaint in Graph DB after administrative override.
+   */
+  public static async updateComplaintOverrideGraph(
+    complaintId: string,
+    deptCode: string,
+    severity: string,
+    status: string
+  ): Promise<void> {
+    logger.info(`[Neo4jGraphService] Updating override for complaint [${complaintId}] (Dept: ${deptCode}, Sev: ${severity})`);
+    const cypher = `
+      MATCH (c:Complaint {complaintId: $complaintId})
+      SET c.department = $deptCode, c.severity = $severity, c.status = $status, c.updatedAt = datetime()
+      WITH c
+      MATCH (d:Department {code: $deptCode})
+      OPTIONAL MATCH (c)-[r:ROUTED_TO]->(:Department)
+      DELETE r
+      MERGE (c)-[:ROUTED_TO]->(d)
+    `;
+    try {
+      await runCypherQuery(cypher, { complaintId, deptCode, severity, status });
+      const item = memoryGraph.complaints.find(c => c.complaintId === complaintId);
+      if (item) {
+        item.deptCode = deptCode;
+        item.severity = severity;
+        item.status = status;
+      }
+    } catch (error) {
+      logger.error(`[Neo4jGraphService] Graph override update error: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Compensating saga rollback: Removes a complaint node from Graph DB if MongoDB transaction aborts.
+   */
+  public static async removeComplaintGraph(complaintId: string): Promise<void> {
+    logger.warn(`[Neo4jGraphService] Compensating saga action: removing complaint [${complaintId}] from Graph DB`);
+    const cypher = `
+      MATCH (c:Complaint {complaintId: $complaintId})
+      DETACH DELETE c
+    `;
+    try {
+      await runCypherQuery(cypher, { complaintId });
+      const idx = memoryGraph.complaints.findIndex(c => c.complaintId === complaintId);
+      if (idx !== -1) {
+        memoryGraph.complaints.splice(idx, 1);
+      }
+    } catch (error) {
+      logger.error(`[Neo4jGraphService] Graph compensation error: ${error}`);
     }
   }
 }

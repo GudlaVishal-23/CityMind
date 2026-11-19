@@ -17,8 +17,10 @@
 import { StateGraph, END, START, type StateGraphArgs } from '@langchain/langgraph';
 import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
-import DuplicateService from './duplicate.service';
+import DuplicateService, { DuplicateAnalysisResult } from './duplicate.service';
 import logger from '../utils/logger';
+import { safeFetchImageBuffer } from '../utils/urlValidator';
+import { detectDepartment } from '../utils/pureHelpers';
 
 dotenv.config();
 
@@ -73,6 +75,9 @@ export interface IWorkflowState {
     parentIncidentId: string | null;
     nearbyCount: number;
   } | null;
+  embedding?: number[];
+  imageDHash?: string;
+  duplicateAnalysis?: DuplicateAnalysisResult | null;
 
   // --- Priority Assessment Agent output ---
   severity: 'Low' | 'Medium' | 'High' | 'Critical' | null;
@@ -123,6 +128,9 @@ const graphChannels: StateGraphArgs<IWorkflowState>['channels'] = {
   imageAnalysis:          { reducer: (_prev: any, cur: any) => cur, default: () => null },
   geoVerification:        { reducer: (_prev: any, cur: any) => cur, default: () => null },
   duplicateScore:         { reducer: (_prev: any, cur: any) => cur, default: () => null },
+  embedding:              { reducer: (_prev: any, cur: any) => cur, default: () => undefined },
+  imageDHash:             { reducer: (_prev: any, cur: any) => cur, default: () => undefined },
+  duplicateAnalysis:      { reducer: (_prev: any, cur: any) => cur, default: () => null },
   severity:               { reducer: (_prev: any, cur: any) => cur, default: () => null },
   department:             { reducer: (_prev: any, cur: any) => cur, default: () => null },
   explainability:         { reducer: (_prev: any, cur: any) => cur, default: () => null },
@@ -209,19 +217,14 @@ async function downloadImage(url: string): Promise<{ base64: string; mime: strin
         }
       }
     } catch {
-      // Fall through to HTTP fetch
+      // Fall through to safe image fetch
     }
   }
 
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-  });
-  if (!res.ok) throw new Error(`Image download HTTP error: ${res.statusText}`);
-  const arrayBuffer = await res.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
+  const { buffer, mimeType } = await safeFetchImageBuffer(url);
   return {
     base64: buffer.toString('base64'),
-    mime: res.headers.get('content-type') || 'image/jpeg',
+    mime: mimeType,
   };
 }
 
@@ -633,11 +636,16 @@ async function duplicateDetectionNode(state: IWorkflowState): Promise<Partial<IW
       state.complaintText,
       state.uploadedImage,
       state.gpsCoordinates,
-      state.category || 'UnclassifiedHazard'
+      state.category || 'UnclassifiedHazard',
+      state.embedding,
+      state.imageDHash
     );
 
     const latencyMs = Date.now() - t0;
     return {
+      embedding: analysis.textEmbedding,
+      imageDHash: analysis.imageDHash,
+      duplicateAnalysis: analysis,
       duplicateScore: {
         isDuplicate: analysis.isDuplicate,
         duplicateConfidence: analysis.duplicateScore,
@@ -717,31 +725,11 @@ async function departmentRoutingNode(state: IWorkflowState): Promise<Partial<IWo
   const hazardType = (state.imageAnalysis?.hazardType || '').toLowerCase();
   const category = (state.category || '').toLowerCase();
   const entities = state.complaintUnderstanding?.entities || [];
-  const combined = `${hazardType} ${category} ${entities.join(' ')}`.toLowerCase();
+  const complaintText = (state.complaintText || '').toLowerCase();
+  const combined = `${hazardType} ${category} ${entities.join(' ')} ${complaintText}`.toLowerCase();
 
-  let department: IWorkflowState['department'] = 'PWD'; // default
+  const department: IWorkflowState['department'] = detectDepartment(combined) as IWorkflowState['department'];
   let estimatedResolution = '48 Hours';
-
-  // Score each department by keyword hit count — highest score wins
-  const deptKeywords: Record<string, string[]> = {
-    ELECTRICITY: ['electric', 'transformer', 'wire', 'spark', 'streetlight', 'light', 'voltage', 'power', 'grid', 'cable'],
-    WATER_BOARD: ['water', 'pipe', 'leak', 'drain', 'sewer', 'flood', 'sewage', 'hydrant', 'plumbing'],
-    SANITATION:  ['garbage', 'waste', 'trash', 'bin', 'rubbish', 'sanitation', 'compost', 'litter', 'dump'],
-    PWD:         ['road', 'pothole', 'pavement', 'bridge', 'tree', 'obstruction', 'sinkhole', 'asphalt', 'structure'],
-  };
-
-  const scores: Record<string, number> = { ELECTRICITY: 0, WATER_BOARD: 0, SANITATION: 0, PWD: 0 };
-  for (const [dept, keywords] of Object.entries(deptKeywords)) {
-    for (const kw of keywords) {
-      if (combined.includes(kw)) scores[dept]++;
-    }
-  }
-
-  // Pick department with highest score (PWD is default if all zero)
-  const bestDept = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
-  if (bestDept[1] > 0) {
-    department = bestDept[0] as IWorkflowState['department'];
-  }
 
   // Set resolution estimate based on severity and department
   const resolutionMap: Record<string, Record<string, string>> = {
@@ -807,8 +795,8 @@ async function explainabilityNode(state: IWorkflowState): Promise<Partial<IWorkf
 
   // Complaint understanding
   if (state.complaintUnderstanding) {
-    evidence.push(`Citizen intent: ${state.complaintUnderstanding.intent}`);
-    evidence.push(`Extracted entities: ${state.complaintUnderstanding.entities.join(', ')}`);
+    evidence.push(`Citizen intent: ${state.complaintUnderstanding.intent || 'Civic infrastructure complaint'}`);
+    evidence.push(`Extracted entities: ${(state.complaintUnderstanding.entities || []).join(', ')}`);
   }
 
   // Compute overall routing confidence

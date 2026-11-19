@@ -1,8 +1,10 @@
-import Incident from '../models/incident.model';
+import Incident, { IIncident } from '../models/incident.model';
 import AILog from '../models/aiLog.model';
 import DuplicateService from './duplicate.service';
+import FaissIndexService from './faissIndex.service';
 import AIBrainService from './aiBrain.service';
 import Neo4jGraphService from './neo4jGraph.service';
+import { executeWithPolyglotTransaction } from '../utils/transaction';
 import { AppError } from '../middleware/error.middleware';
 import logger from '../utils/logger';
 
@@ -28,12 +30,18 @@ export class IncidentService {
       }
 
       // 2. Perform production multi-modal duplicate scan (Embeddings + FAISS + GPS + pHash)
-      const dupAnalysis = await DuplicateService.analyzeDuplicate(
+      // Remediates DEF-BE-03: Reuses precomputed pipeline duplicate analysis or passes precomputed vectors
+      const dupAnalysis = aiResult.duplicateAnalysis || await DuplicateService.analyzeDuplicate(
         `${payload.title} ${payload.description}`,
         payload.imageUrl,
         payload.location,
-        aiResult.category
+        aiResult.category,
+        aiResult.embedding,
+        aiResult.imageDHash
       );
+
+      const incidentEmbedding = aiResult.embedding || dupAnalysis.textEmbedding;
+      const incidentDHash = aiResult.imageDHash || dupAnalysis.imageDHash;
 
       if (dupAnalysis.duplicateScore > 0.90 && dupAnalysis.parentIncidentId) {
         // Increment parent witness count
@@ -55,7 +63,9 @@ export class IncidentService {
           status: 'Submitted',
           isDuplicate: true,
           parentIncidentId: dupAnalysis.parentIncidentId,
-          witnessCount: 1
+          witnessCount: 1,
+          embedding: incidentEmbedding,
+          imageDHash: incidentDHash
         });
 
         logger.info(`[IncidentService] Duplicate report (Confidence: ${(dupAnalysis.duplicateScore * 100).toFixed(1)}%) linked to parent incident ID: ${dupAnalysis.parentIncidentId}`);
@@ -66,35 +76,61 @@ export class IncidentService {
         };
       }
 
-      // 3. Unique Incident: Persist main incident
-      const newIncident = await Incident.create({
-        citizenId,
-        title: payload.title,
-        description: payload.description,
-        imageUrl: payload.imageUrl,
-        location: {
-          type: 'Point',
-          coordinates: [payload.location.lng, payload.location.lat]
+      // 3 & 4. Unique Incident: Polyglot Transaction (MongoDB Write + Neo4j Graph Ingestion)
+      const newIncident = await executeWithPolyglotTransaction<IIncident>({
+        mongoWork: async (session) => {
+          const created = await Incident.create([{
+            citizenId,
+            title: payload.title,
+            description: payload.description,
+            imageUrl: payload.imageUrl,
+            location: {
+              type: 'Point',
+              coordinates: [payload.location.lng, payload.location.lat]
+            },
+            category: aiResult.category,
+            severity: aiResult.severity,
+            department: aiResult.department,
+            status: aiResult.confidence >= 0.82 ? 'Assigned' : 'Submitted',
+            isDuplicate: false,
+            parentIncidentId: null,
+            witnessCount: 1,
+            embedding: incidentEmbedding,
+            imageDHash: incidentDHash
+          }], session ? { session } : {});
+
+          const doc = Array.isArray(created) ? created[0] : created;
+          return doc as IIncident;
         },
-        category: aiResult.category,
-        severity: aiResult.severity,
-        department: aiResult.department,
-        status: aiResult.confidence >= 0.82 ? 'Assigned' : 'Submitted',
-        isDuplicate: false,
-        parentIncidentId: null,
-        witnessCount: 1
+        neo4jWork: async (createdDoc) => {
+          await Neo4jGraphService.ingestComplaintGraph({
+            complaintId: createdDoc._id.toString(),
+            title: createdDoc.title,
+            category: createdDoc.category,
+            severity: createdDoc.severity,
+            status: createdDoc.status,
+            wardCode: 'WARD_151',
+            deptCode: createdDoc.department
+          });
+        },
+        compensateMongo: async (createdDoc) => {
+          // Compensating saga rollback for standalone/fallback tiers
+          await Incident.findByIdAndDelete(createdDoc._id);
+          await Neo4jGraphService.removeComplaintGraph(createdDoc._id.toString());
+        }
       });
 
-      // 4. Ingest into Neo4j Graph Database
-      await Neo4jGraphService.ingestComplaintGraph({
-        complaintId: newIncident._id.toString(),
-        title: newIncident.title,
-        category: newIncident.category,
-        severity: newIncident.severity,
-        status: newIncident.status,
-        wardCode: 'WARD_151',
-        deptCode: newIncident.department
-      });
+      // Synchronize in-memory FAISS vector index (bounded to 2,500 entries per DEF-PERF-01)
+      if (incidentEmbedding) {
+        FaissIndexService.addIndexEntry({
+          incidentId: newIncident._id.toString(),
+          vector: incidentEmbedding,
+          category: newIncident.category,
+          location: { lat: payload.location.lat, lng: payload.location.lng },
+          pHash: incidentDHash,
+          createdAt: newIncident.createdAt
+        });
+      }
 
       // 5. Save AI Decision logs for auditDrawer telemetry
       const markdownReport = `### AI Decision Rationale\n- **Visual Analysis**: Identified features include: ${aiResult.imageFeatures.join(', ')}.\n- **Threat Level Assessment**: Rated **${aiResult.severity}** severity. ${aiResult.why[1] || ''}\n- **Routing**: Dispatched to **${aiResult.department}**. ${aiResult.why[0] || ''}`;

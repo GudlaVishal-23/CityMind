@@ -52,19 +52,51 @@ export const memoryGraph = {
   complaints: [] as any[]
 };
 
+export const MAX_GRAPH_NODES = 5000;
+
+export function enforceGraphCapacity(): void {
+  if (memoryGraph.complaints.length >= MAX_GRAPH_NODES) {
+    // Evict oldest resolved complaint or FIFO
+    let evictIdx = memoryGraph.complaints.findIndex(c => c.status === 'Resolved' || c.status === 'Rejected');
+    if (evictIdx === -1) {
+      evictIdx = 0;
+    }
+    memoryGraph.complaints.splice(evictIdx, 1);
+    logger.debug(`[Neo4j Emulator] Evicted complaint node at index ${evictIdx} to enforce limit of ${MAX_GRAPH_NODES}`);
+  }
+}
+
+export function getPersistenceHealth(): { neo4jMode: 'bolt' | 'emulator'; isNeo4jConnected: boolean; memoryRecordCount: number } {
+  return {
+    neo4jMode: isNeo4jConnected ? 'bolt' : 'emulator',
+    isNeo4jConnected,
+    memoryRecordCount:
+      memoryGraph.complaints.length +
+      memoryGraph.wards.length +
+      memoryGraph.departments.length +
+      memoryGraph.officers.length +
+      memoryGraph.roads.length +
+      memoryGraph.assets.length
+  };
+}
+
 export async function connectNeo4j(): Promise<boolean> {
   try {
     logger.info(`[Neo4j] Attempting connection to Graph DB at ${NEO4J_URI}`);
     driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD));
 
-    // Verify connectivity
-    const serverInfo = await driver.getServerInfo();
+    // Fast-fail connection timeout race (2500ms max for serverless cold-start readiness)
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Neo4j connection handshake timed out after 2500ms')), 2500)
+    );
+
+    const serverInfo = await Promise.race([driver.getServerInfo(), timeoutPromise]);
     isNeo4jConnected = true;
     logger.info(`[Neo4j] Graph Database connected successfully. Server: ${serverInfo.agent}`);
     return true;
   } catch (err: any) {
     isNeo4jConnected = false;
-    logger.warn(`[Neo4j] Live Graph DB unavailable (${err.message || err}). Activating In-Memory Graph Emulator.`);
+    logger.warn(`[Neo4j] Live Graph DB unavailable (${err.message || err}). Activating In-Memory Graph Emulator in <3000ms.`);
     return false;
   }
 }
@@ -171,5 +203,7 @@ export default {
   connectNeo4j,
   getNeo4jDriver,
   isGraphConnected,
-  runCypherQuery
+  runCypherQuery,
+  getPersistenceHealth,
+  enforceGraphCapacity
 };

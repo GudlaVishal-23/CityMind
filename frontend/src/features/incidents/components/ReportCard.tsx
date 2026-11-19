@@ -4,6 +4,7 @@ import {
   Shield, Clock, CheckCircle2, ChevronRight, 
   Sparkles, Download, Cpu
 } from 'lucide-react';
+import { API_BASE_URL } from '@config/api';
 
 interface ReportCardProps {
   data: {
@@ -161,7 +162,7 @@ export const ReportCard: React.FC<ReportCardProps> = ({ data, onClose }) => {
           onClick={async () => {
             try {
               const token = localStorage.getItem('aicity_dev_token') || 'dev-citizen';
-              const res = await fetch(`http://localhost:5000/api/incidents/${incidentId}/audit/pdf`, {
+              const res = await fetch(`${API_BASE_URL}/incidents/${incidentId}/audit/pdf`, {
                 headers: { Authorization: `Bearer ${token}` }
               });
               if (!res.ok) throw new Error('PDF export failed');

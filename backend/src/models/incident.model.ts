@@ -1,10 +1,23 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
+export const INCIDENT_STATUSES = [
+  'Submitted',
+  'Verified',
+  'Assigned',
+  'In_Progress',
+  'Resolved',
+  'Rejected'
+] as const;
+
+export type IncidentStatus = typeof INCIDENT_STATUSES[number];
+
 export interface IStatusEntry {
   status: string;
   timestamp: Date;
   note: string;
   actorId?: string;
+  changedBy?: string;
+  role?: string;
 }
 
 export interface IIncident extends Document {
@@ -19,7 +32,7 @@ export interface IIncident extends Document {
   category: string;
   severity: 'Low' | 'Medium' | 'High' | 'Critical';
   department: 'PWD' | 'ELECTRICITY' | 'WATER_BOARD' | 'SANITATION';
-  status: 'Submitted' | 'Verified' | 'Assigned' | 'In_Progress' | 'Resolved';
+  status: IncidentStatus;
   statusHistory: IStatusEntry[];
   assignedOfficerId: Types.ObjectId | null;
   isDuplicate: boolean;
@@ -27,6 +40,8 @@ export interface IIncident extends Document {
   witnessCount: number;
   resolvedAt: Date | null;
   resolutionNotes: string;
+  embedding?: number[];
+  imageDHash?: string;
   createdAt: Date;
 }
 
@@ -34,7 +49,9 @@ const StatusEntrySchema = new Schema<IStatusEntry>({
   status: { type: String, required: true },
   timestamp: { type: Date, default: Date.now },
   note: { type: String, default: '' },
-  actorId: { type: String }
+  actorId: { type: String },
+  changedBy: { type: String },
+  role: { type: String }
 }, { _id: false });
 
 const IncidentSchema = new Schema<IIncident>({
@@ -49,7 +66,7 @@ const IncidentSchema = new Schema<IIncident>({
   category: { type: String, required: true },
   severity: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], required: true, index: true },
   department: { type: String, enum: ['PWD', 'ELECTRICITY', 'WATER_BOARD', 'SANITATION'], required: true, index: true },
-  status: { type: String, enum: ['Submitted', 'Verified', 'Assigned', 'In_Progress', 'Resolved'], default: 'Submitted', index: true },
+  status: { type: String, enum: INCIDENT_STATUSES, default: 'Submitted', index: true },
   statusHistory: { type: [StatusEntrySchema], default: [] },
   assignedOfficerId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   isDuplicate: { type: Boolean, default: false, index: true },
@@ -57,13 +74,18 @@ const IncidentSchema = new Schema<IIncident>({
   witnessCount: { type: Number, default: 1, min: 1 },
   resolvedAt: { type: Date, default: null },
   resolutionNotes: { type: String, default: '' },
+  embedding: { type: [Number], select: false },
+  imageDHash: { type: String, index: true },
   createdAt: { type: Date, default: Date.now, index: true }
 });
 
 // Configure Geospatial 2dsphere Index
 IncidentSchema.index({ location: '2dsphere' });
 
-// Configure Compound Indexes
+// Configure Compound & Operational Indexes (DEF-DATA-02)
+IncidentSchema.index({ status: 1, createdAt: -1 });
+IncidentSchema.index({ category: 1, status: 1, createdAt: -1 });
+IncidentSchema.index({ citizenId: 1, createdAt: -1 });
 IncidentSchema.index({ department: 1, status: 1 });
 IncidentSchema.index({ status: 1, severity: -1 });
 

@@ -22,7 +22,11 @@ export const errorHandler = (err: Error, _req: Request, res: Response, _next: Ne
   if (err instanceof AppError) {
     statusCode = err.statusCode;
     code = err.code;
-    userMessage = err.message;
+    userMessage = err.code === 'CORS_NOT_ALLOWED' ? 'CORS Not Allowed' : err.message;
+  } else if (errorMessage.includes('CORS') || errorMessage.includes('cors')) {
+    statusCode = 403;
+    code = 'CORS_NOT_ALLOWED';
+    userMessage = 'CORS Not Allowed';
   } else if (errorMessage.includes('Image') || errorMessage.includes('image') || errorMessage.includes('base64')) {
     statusCode = 400;
     code = 'INVALID_IMAGE';
@@ -47,6 +51,10 @@ export const errorHandler = (err: Error, _req: Request, res: Response, _next: Ne
     statusCode = 503;
     code = 'NETWORK_FAILURE';
     userMessage = 'Unable to connect to external services. Please check your connection and try again.';
+  } else if ((err as { status?: number }).status === 413 || (err as { type?: string }).type === 'entity.too.large' || errorMessage.includes('too large')) {
+    statusCode = 413;
+    code = 'PAYLOAD_TOO_LARGE';
+    userMessage = 'Payload too large. Request entity exceeds size limit.';
   } else if (errorMessage.includes('Validation') || errorMessage.includes('validation')) {
     statusCode = 400;
     code = 'VALIDATION_ERROR';
@@ -60,7 +68,7 @@ export const errorHandler = (err: Error, _req: Request, res: Response, _next: Ne
     error: {
       code,
       message: userMessage,
-      ...(process.env.NODE_ENV === 'development' ? { debug: errorMessage } : {})
+      ...(process.env.NODE_ENV === 'development' && code !== 'CORS_NOT_ALLOWED' ? { debug: errorMessage } : {})
     }
   });
 };
